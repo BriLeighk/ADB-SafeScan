@@ -1,0 +1,9 @@
+
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/open_home_page"
+        android:icon="@drawable/ic_usb"
+        android:title="@string/open_adb_page"
+        app:showAsAction="always" />
+</menu>

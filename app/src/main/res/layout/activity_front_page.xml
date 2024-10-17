@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp"
+    android:background="@color/backgroundColor">
+
+    <TextView
+        android:id="@+id/front_page_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/safescan"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="40dp"
+        android:textColor="@color/textColorPrimary" />
+
+    <TextView
+        android:id="@+id/front_page_description"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/safescan_is_here_to_help_ensure_your_digital_privacy"
+        android:layout_below="@id/front_page_title"
+        android:layout_marginTop="16dp"
+        android:layout_centerHorizontal="true"
+        android:textSize="18sp"
+        android:gravity="center"
+        android:textColor="@color/textColorSecondary" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:layout_below="@id/front_page_description"
+        android:layout_marginTop="16dp"
+        android:background="?android:attr/listDivider" />
+
+    <TextView
+        android:id="@+id/scan_info"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Scanning your device will alert you of any potentially harmful apps on your device, ranked from most to least harmful."
+        android:layout_below="@id/front_page_description"
+        android:layout_marginTop="32dp"
+        android:layout_centerHorizontal="true"
+        android:textSize="14sp"
+        android:gravity="center"
+        android:textColor="@color/textColorSecondary" />
+
+    <Button
+        android:id="@+id/open_app_scan_button"
+        android:layout_width="200dp"
+        android:layout_height="60dp"
+        android:text="Scan Device"
+        android:layout_below="@id/scan_info"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/rounded_button" />
+
+    <TextView
+        android:id="@+id/privacy_info"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Conducting a privacy scan will provide you with some popular social media apps on your device that may need privacy setting adjustments, and give you the option to clear browsing traces."
+        android:layout_below="@id/open_app_scan_button"
+        android:layout_marginTop="32dp"
+        android:layout_centerHorizontal="true"
+        android:textSize="14sp"
+        android:gravity="center"
+        android:textColor="@color/textColorSecondary" />
+
+    <Button
+        android:id="@+id/privacy_scan_button"
+        android:layout_width="200dp"
+        android:layout_height="60dp"
+        android:text="Privacy Scan"
+        android:layout_below="@id/privacy_info"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/rounded_button" />
+
+</RelativeLayout>

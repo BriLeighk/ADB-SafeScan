@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="white">#ffffff</color>
-    <color name="light_gray">#f4f4f4</color>
-    <color name="dark_gray">#666666</color>
-    <color name="light_green">#86c200</color>
-
-    <color name="colorPrimary">#485AB8</color>
-    <color name="colorPrimaryDark">#485AB8</color>
-    <color name="colorAccent">#485AB8</color>
+    <color name="backgroundColor">#F0F4FF</color> <!-- Light pastel blue -->
+    <color name="textColorPrimary">#4A4A4A</color> <!-- Dark gray -->
+    <color name="textColorSecondary">#7A7A7A</color> <!-- Medium gray -->
+    <color name="buttonColor">#ACCBFF</color> <!-- Pastel purple -->
+    <color name="colorPrimary">#ACCBFF</color> <!-- Pastel purple -->
+    <color name="colorPrimaryDark">#ACCBFF</color> <!-- Darker pastel purple -->
+    <color name="colorAccent">#FFCCBC</color> <!-- Pastel peach -->
 </resources>

@@ -3,6 +3,8 @@
 
     <uses-feature android:name="android.hardware.usb.host" />
 
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -10,23 +12,28 @@
         android:theme="@style/AppTheme">
 
         <activity
-            android:exported="true"
             android:name=".MainActivity"
-            android:launchMode="singleTask">
+            android:label="@string/app_name"
+            android:theme="@style/AppTheme"
+            android:exported="true">
+            <!-- Remove the MAIN and LAUNCHER intent filters from here -->
+        </activity>
+
+        <activity
+            android:name=".FrontPageActivity"
+            android:label="@string/app_name"
+            android:theme="@style/AppTheme"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
-            <intent-filter>
-                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
-            </intent-filter>
-
-            <meta-data
-                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
-                android:resource="@xml/device_filter" />
         </activity>
+
+        <activity
+            android:name=".AppScanActivity"
+            android:label="App Scan"
+            android:theme="@style/AppTheme" />
 
         <receiver android:name=".UsbReceiver"
             android:exported="true">
@@ -48,6 +55,7 @@
                 android:resource="@xml/device_filter" />
 
         </receiver>
+
     </application>
 
 </manifest>

@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.hardware.usb.UsbManager;
-import android.os.Bundle;
 import android.os.Parcelable;
 import android.util.Log;
 

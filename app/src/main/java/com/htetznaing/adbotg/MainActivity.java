@@ -40,12 +40,7 @@ import com.cgutman.adblib.AdbConnection;
 import com.cgutman.adblib.AdbCrypto;
 import com.cgutman.adblib.AdbStream;
 import com.cgutman.adblib.UsbChannel;
-import com.htetznaing.adbotg.Adapter.SliderAdapterExample;
-import com.htetznaing.adbotg.Model.SliderItem;
 import com.htetznaing.adbotg.UI.SpinnerDialog;
-import com.smarteist.autoimageslider.IndicatorView.animation.type.IndicatorAnimationType;
-import com.smarteist.autoimageslider.SliderAnimations;
-import com.smarteist.autoimageslider.SliderView;
 
 import java.io.File;
 import java.io.IOException;
@@ -70,8 +65,6 @@ public class MainActivity extends AppCompatActivity implements TextView.OnEditor
     private Button btnRun;
     private ScrollView scrollView;
     private String user = null;
-    private SliderAdapterExample adapter;
-    private SliderView sliderView;
     private boolean doubleBackToExitPressedOnce = false;
     private AdbStream stream;
     private SpinnerDialog waitingDialog;
@@ -79,6 +72,11 @@ public class MainActivity extends AppCompatActivity implements TextView.OnEditor
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        // Enable the up button
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        }
 
         tvStatus = findViewById(R.id.tv_status);
         usb_icon = findViewById(R.id.usb_icon);
@@ -179,29 +177,6 @@ public class MainActivity extends AppCompatActivity implements TextView.OnEditor
             }
         }
 
-        //Slider
-        sliderView = findViewById(R.id.imageSlider);
-        adapter = new SliderAdapterExample(this);
-        sliderView.setSliderAdapter(adapter);
-        sliderView.setIndicatorAnimation(IndicatorAnimationType.WORM); //set indicator animation by using SliderLayout.IndicatorAnimations. :WORM or THIN_WORM or COLOR or DROP or FILL or NONE or SCALE or SCALE_DOWN or SLIDE and SWAP!!
-        sliderView.setSliderTransformAnimation(SliderAnimations.SIMPLETRANSFORMATION);
-        sliderView.setAutoCycleDirection(SliderView.AUTO_CYCLE_DIRECTION_BACK_AND_FORTH);
-        sliderView.setIndicatorSelectedColor(Color.WHITE);
-        sliderView.setIndicatorUnselectedColor(Color.GRAY);
-        sliderView.setScrollTimeInSec(3);
-        sliderView.setAutoCycle(true);
-        sliderView.startAutoCycle();
-
-        SliderItem sliderItem = new SliderItem();
-        sliderItem.setImageUrl(R.drawable.p2p_howto);
-        sliderItem.setDescription("Connect phone to phone");
-        adapter.addItem(sliderItem);
-
-        SliderItem sliderItem1 = new SliderItem();
-        sliderItem1.setImageUrl(R.drawable.deb);
-        sliderItem1.setDescription("Enable developer options and USB debugging");
-        adapter.addItem(sliderItem1);
-
         edCommand.setImeActionLabel("Run", EditorInfo.IME_ACTION_DONE);
         edCommand.setOnEditorActionListener(this);
         edCommand.setOnKeyListener(this);
@@ -245,10 +220,17 @@ public class MainActivity extends AppCompatActivity implements TextView.OnEditor
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId()==R.id.go_to_github){
-            startActivity(new Intent(Intent.ACTION_VIEW).setData(Uri.parse("https://github.com/KhunHtetzNaing/ADB-OTG")));
+        switch (item.getItemId()) {
+            case android.R.id.home:
+                // Handle the up button click
+                onBackPressed();
+                return true;
+            case R.id.go_to_github:
+                startActivity(new Intent(Intent.ACTION_VIEW).setData(Uri.parse("https://github.com/KhunHtetzNaing/ADB-OTG")));
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
         }
-        return super.onOptionsItemSelected(item);
     }
 
     @Override
@@ -273,7 +255,6 @@ public class MainActivity extends AppCompatActivity implements TextView.OnEditor
             }.start();
         }
     }
-
     BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
@@ -476,21 +457,8 @@ public class MainActivity extends AppCompatActivity implements TextView.OnEditor
 
     @Override
     public void onBackPressed() {
-        if (doubleBackToExitPressedOnce) {
-            super.onBackPressed();
-            return;
-        }
-
-        this.doubleBackToExitPressedOnce = true;
-        Toast.makeText(this, "Please click BACK again to exit", Toast.LENGTH_SHORT).show();
-
-        new Handler().postDelayed(new Runnable() {
-
-            @Override
-            public void run() {
-                doubleBackToExitPressedOnce=false;
-            }
-        }, 2000);
+        // Simply call the super method to handle the back press
+        super.onBackPressed();
     }
 
     @Override
@@ -513,4 +481,3 @@ public class MainActivity extends AppCompatActivity implements TextView.OnEditor
         }
     }
 }
-
