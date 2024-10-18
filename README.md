@@ -1,5 +1,5 @@
 
-# ADB⚡OTG
+# SafeScan
 
 This project is a fork of the [ADB⚡OTG](https://github.com/KhunHtetzNaing/ADB-OTG) repository, utilizing the 
 [adb library](https://github.com/wuxudong/flashbot) developed by [wuxudong](https://github.com/wuxudong).
