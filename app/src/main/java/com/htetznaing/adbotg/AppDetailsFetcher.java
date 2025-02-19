@@ -50,14 +50,21 @@ public class AppDetailsFetcher {
      * @param drawable The drawable to convert.
      * @return The base64 encoded string of the drawable.
      */
-    private static String getBase64IconFromDrawable(Drawable drawable) {
-        Bitmap bitmap = (drawable instanceof BitmapDrawable) ? ((BitmapDrawable) drawable).getBitmap() : null;
+    public static String getBase64IconFromDrawable(Drawable drawable) {
+        Bitmap bitmap = (drawable instanceof BitmapDrawable) ? 
+            ((BitmapDrawable) drawable).getBitmap() : null;
+            
         if (bitmap == null) {
-            bitmap = Bitmap.createBitmap(drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
+            bitmap = Bitmap.createBitmap(
+                drawable.getIntrinsicWidth(), 
+                drawable.getIntrinsicHeight(), 
+                Bitmap.Config.ARGB_8888
+            );
             Canvas canvas = new Canvas(bitmap);
             drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
             drawable.draw(canvas);
         }
+        
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos);
         return Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);

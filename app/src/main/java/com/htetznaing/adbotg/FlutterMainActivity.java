@@ -12,6 +12,9 @@ import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.BinaryMessenger;
 import java.util.List;
 import java.util.Map;
+import android.util.Log;
+import android.os.Bundle;
+import androidx.annotation.NonNull;
 
 // Import MainActivity
 import com.htetznaing.adbotg.MainActivity;
@@ -26,53 +29,88 @@ public class FlutterMainActivity extends FlutterActivity {
     private static final String SPYWARE_CHANNEL = "samples.flutter.dev/spyware";
     private static final String APP_DETAILS_CHANNEL = "com.htetznaing.adbotg/app_details";
     private MethodChannel methodChannel;
+    private ApplicationController appController;
 
     @Override
-    public void configureFlutterEngine(FlutterEngine flutterEngine) {
-        super.configureFlutterEngine(flutterEngine);
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        appController = ApplicationController.getInstance();
 
-        // Setup method channel for opening main activity
-        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), CHANNEL)
+        // Initialize method channels first
+        methodChannel = new MethodChannel(getFlutterEngine().getDartExecutor().getBinaryMessenger(), USB_CHANNEL);
+        
+        // Setup other method channels
+        new MethodChannel(getFlutterEngine().getDartExecutor().getBinaryMessenger(), CHANNEL)
             .setMethodCallHandler(
                 (call, result) -> {
-                    if (call.method.equals("openMainActivity")) {
-                        openMainActivity();
-                        result.success(null);
-                    } else {
-                        result.notImplemented();
+                    switch (call.method) {
+                        case "openMainActivity":
+                            openMainActivity();
+                            result.success(null);
+                            break;
+                        case "retryConnection":
+                            retryConnection();
+                            result.success(null);
+                            break;
+                        default:
+                            result.notImplemented();
                     }
                 }
             );
 
+        AppDetailsChannelHandler.setup(getFlutterEngine().getDartExecutor().getBinaryMessenger());
+        SpywareChannelHandler.setup(getFlutterEngine().getDartExecutor().getBinaryMessenger());
+        PrivacySettingsHandler.setup(getFlutterEngine().getDartExecutor().getBinaryMessenger());
+
+        // Register USB broadcast receiver
+        IntentFilter filter = new IntentFilter("com.htetznaing.adbotg.USB_STATUS");
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(usbStatusReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(usbStatusReceiver, filter);
+        }
+
+        // Initialize connection after channels are setup
+        appController.initializeConnection();
+
+        // Check initial connection status
+        if (appController.isConnected()) {
+            methodChannel.invokeMethod("usbConnected", null);
+        }
+
         // Setup AppDetailsChannelHandler
-        AppDetailsChannelHandler.setup(flutterEngine.getDartExecutor().getBinaryMessenger());
+        AppDetailsChannelHandler.setup(getFlutterEngine().getDartExecutor().getBinaryMessenger());
 
         // Listen for USB connection status
-        methodChannel = new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), USB_CHANNEL);
-
-        // Register the broadcast receiver
-        IntentFilter filter = new IntentFilter("com.htetznaing.adbotg.USB_STATUS");
-        registerReceiver(usbStatusReceiver, filter);
+        methodChannel = new MethodChannel(getFlutterEngine().getDartExecutor().getBinaryMessenger(), USB_CHANNEL);
 
         // Setup spyware channel
-        SpywareChannelHandler.setup(flutterEngine.getDartExecutor().getBinaryMessenger());
+        SpywareChannelHandler.setup(getFlutterEngine().getDartExecutor().getBinaryMessenger());
 
-        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), SPYWARE_CHANNEL)
+        new MethodChannel(getFlutterEngine().getDartExecutor().getBinaryMessenger(), SPYWARE_CHANNEL)
             .setMethodCallHandler(
                 (call, result) -> {
                     if ("getSpywareApps".equals(call.method)) {
                         List<List<String>> csvData = call.argument("csvData");
                         if (csvData != null) {
-                            List<Map<String, Object>> spywareApps = SpywareDetector.getDetectedSpywareApps(csvData, false);
-                            result.success(spywareApps);
+                            try {
+                                List<Map<String, Object>> spywareApps = SpywareDetector.getDetectedSpywareApps(csvData, false);
+                                result.success(spywareApps);
+                            } catch (Exception e) {
+                                result.error("SCAN_ERROR", "Error scanning for spyware apps", e.getMessage());
+                            }
                         } else {
                             result.error("INVALID_ARGUMENT", "CSV data is required", null);
                         }
                     } else if ("getSpywareAppsFromTarget".equals(call.method)) {
                         List<List<String>> csvData = call.argument("csvData");
                         if (csvData != null) {
-                            List<Map<String, Object>> spywareApps = SpywareDetector.getDetectedSpywareApps(csvData, true);
-                            result.success(spywareApps);
+                            try {
+                                List<Map<String, Object>> spywareApps = SpywareDetector.getDetectedSpywareApps(csvData, true);
+                                result.success(spywareApps);
+                            } catch (Exception e) {
+                                result.error("SCAN_ERROR", "Error scanning target device", e.getMessage());
+                            }
                         } else {
                             result.error("INVALID_ARGUMENT", "CSV data is required", null);
                         }
@@ -81,6 +119,10 @@ public class FlutterMainActivity extends FlutterActivity {
                     }
                 }
             );
+
+        // Add the privacy settings handler
+        PrivacySettingsHandler.setup(getFlutterEngine().getDartExecutor().getBinaryMessenger());
+        Log.d("FlutterMainActivity", "PrivacySettingsHandler setup complete");
     }
 
     /**
@@ -91,6 +133,11 @@ public class FlutterMainActivity extends FlutterActivity {
         startActivity(intent);
     }
 
+    private void retryConnection() {
+        // Request USB permission and attempt to establish connection
+        appController.requestConnection();
+    }
+
     /**
      * Broadcast receiver for USB connection status.
      */
@@ -98,7 +145,11 @@ public class FlutterMainActivity extends FlutterActivity {
         @Override
         public void onReceive(Context context, Intent intent) {
             boolean isConnected = intent.getBooleanExtra("isConnected", false);
-            methodChannel.invokeMethod(isConnected ? "usbConnected" : "usbDisconnected", null);
+            if (isConnected) {
+                methodChannel.invokeMethod("usbConnected", null);
+            } else {
+                methodChannel.invokeMethod("usbDisconnected", null);
+            }
         }
     };
 
@@ -106,5 +157,9 @@ public class FlutterMainActivity extends FlutterActivity {
     protected void onDestroy() {
         super.onDestroy();
         unregisterReceiver(usbStatusReceiver);
+        // Only close connection if app is actually being destroyed
+        if (isFinishing()) {
+            appController.closeConnection();
+        }
     }
 }

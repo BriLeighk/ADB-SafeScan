@@ -23,6 +23,7 @@ import java.io.InputStreamReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -33,7 +34,6 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.io.File;
 import java.io.IOException;
-import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -49,12 +49,37 @@ import com.cgutman.adblib.AdbBase64;
     public class SpywareDetector {
 
         // Variables
+    private static final String TAG = "SpywareDetector";
         private UsbManager mManager; // USB manager
         private static AdbConnection adbConnection; // ADB connection
         private UsbDevice mDevice; // USB device
         private AdbCrypto adbCrypto; // ADB crypto
         private boolean isAdbConnected = false; // Flag to check if the ADB connection is established
+    private static final int MAX_RETRIES = 3;
+    private static final int RETRY_DELAY_MS = 1000;
+    private static final int CONNECTION_TIMEOUT_MS = 30000; // 30 seconds
+    private static final Object adbLock = new Object(); // Lock for ADB operations
+    private volatile boolean isScanning = false; // Flag to track scanning state
+    private static final Object connectionLock = new Object();
+    private static SpywareDetector instance;
+    private Context applicationContext;  // Add this
+    private static final String ACTION_USB_PERMISSION = "com.htetznaing.adbotg.USB_PERMISSION";
 
+    // Singleton pattern to maintain connection state
+    public static SpywareDetector getInstance() {
+        if (instance == null) {
+            synchronized (connectionLock) {
+                if (instance == null) {
+                    instance = new SpywareDetector();
+                }
+            }
+        }
+        return instance;
+    }
+
+    public void initialize(Context context) {
+        this.applicationContext = context.getApplicationContext();
+    }
 
         /**
          * Get the detected spyware apps from the CSV data
@@ -65,77 +90,67 @@ import com.cgutman.adblib.AdbBase64;
         public static List<Map<String, Object>> getDetectedSpywareApps(List<List<String>> csvData, boolean isTargetDevice) {
             Log.d("SpywareDetector", "Starting spyware app scan...");
 
-            List<String> ids = new ArrayList<>(); // List to store the app IDs
-            Map<String, String> types = new HashMap<>(); // Map to store the app types (i.e. spyware, dual-use, etc.)
+        List<String> ids = new ArrayList<>();
+        Map<String, String> types = new HashMap<>();
+        List<String> installedApps;
+        PackageManager packageManager = null;
+        List<Map<String, Object>> detectedSpywareApps = new ArrayList<>();  // Initialize the list here
 
-            
-            for (int i = 1; i < csvData.size(); i++) { // Iterate through the CSV data
+        // Parse CSV data
+        for (int i = 1; i < csvData.size(); i++) {
                 List<String> line = csvData.get(i);
                 if (!line.isEmpty()) {
                     String appId = line.get(0).trim();
-                    ids.add(appId); // Add the app ID to the list
-                    
+                ids.add(appId);
                     if (line.size() > 2) {
-                        types.put(appId, line.get(2).trim()); // Add the app type to the map
+                    types.put(appId, line.get(2).trim());
                     }
                 }
             }
             Log.d("SpywareDetector", "Successfully added all csv app ids to ids list."); 
 
-            List<Map<String, Object>> detectedSpywareApps = new ArrayList<>(); // List to store apps detected as spyware
-            List<String> installedApps; // List to store the installed app IDs from device
+        SpywareDetector detector = getInstance();
 
-            SpywareDetector detector = new SpywareDetector(); // Create a new instance of SpywareDetector
-
-            if (isTargetDevice) { // If the target device is the current device
-                installedApps = detector.fetchAppsFromTargetDevice(AppContextHolder.getContext()); // Fetch the installed app IDs from the target device
+        if (isTargetDevice) {
+            installedApps = detector.fetchAppsFromTargetDevice(detector.applicationContext);
                 Log.d("SpywareDetector", "Installed Apps on Target:" + installedApps.toString());
-            } else { // If the target device is not the current device
-                PackageManager packageManager = AppContextHolder.getContext().getPackageManager(); // Get the package manager
-                List<ApplicationInfo> appInfoList = packageManager.getInstalledApplications(PackageManager.GET_META_DATA); // Get the list of installed applications from source device
+        } else {
+            packageManager = detector.applicationContext.getPackageManager();
+            List<ApplicationInfo> appInfoList = packageManager.getInstalledApplications(PackageManager.GET_META_DATA);
                 installedApps = new ArrayList<>(); 
-                // Iterate through the list of installed applications & add app ids to list
                 for (ApplicationInfo appInfo : appInfoList) {
                     installedApps.add(appInfo.packageName); 
                 }
                 Log.d("SpywareDetector", "Installed Apps on Source:" + installedApps.toString());
             }
 
-            
-            
-            // Iterate through the list of installed apps & check if they are in the list of spyware / dual-use / offstore apps
             for (String appID : installedApps) {
                 if (ids.contains(appID)) {
                     try { 
                         Map<String, String> appMetadata;
                         String iconBase64;
-                        if (isTargetDevice) { // fetch app metadata from target device
-                            appMetadata = detector.fetchAppMetadataFromTarget(AppContextHolder.getContext(), appID, csvData);
-                            Drawable placeholderIcon = AppContextHolder.getContext().getDrawable(R.drawable.placeholder_icon);
+                    if (isTargetDevice) {
+                        appMetadata = detector.fetchAppMetadataFromTarget(detector.applicationContext, appID, csvData);
+                        Drawable placeholderIcon = detector.applicationContext.getDrawable(R.drawable.placeholder_icon);
                             iconBase64 = getBase64IconFromDrawable(placeholderIcon);
-                        } else { // fetch app metadata from source device
-                            PackageManager packageManager = AppContextHolder.getContext().getPackageManager();
+                    } else {
                             String appName = packageManager.getApplicationLabel(packageManager.getApplicationInfo(appID, 0)).toString();
                             iconBase64 = getBase64IconFromDrawable(packageManager.getApplicationIcon(appID));
                             String installer = getInstallerPackageName(packageManager, appID);
                             
-                            // If the installer is null, set it to "Unknown Installer"
                             if (installer == null) {
                                 installer = "Unknown Installer";
                             }
 
-                            // Initialize the app metadata map
                             appMetadata = new HashMap<>();
                             appMetadata.put("name", appName);
                             appMetadata.put("installer", installer);
                         }
 
-                        // Get the store link & app type
                         String storeLink = getStoreLink(appID, appMetadata.get("installer"));
                         String appType = types.getOrDefault(appID, "Unknown");
                         List<Map<String, String>> permissions = AppDetailsFetcher.getAppPermissions(appID);
 
-                        // Initialize the app info map
                         Map<String, Object> appInfo = new HashMap<>();
                         appInfo.put("id", appID);
                         appInfo.put("name", appMetadata.get("name"));
@@ -145,10 +160,9 @@ import com.cgutman.adblib.AdbBase64;
                         appInfo.put("type", appType);
                         appInfo.put("permissions", permissions);
 
-                        // Add the app info to the list of detected spyware apps
                         detectedSpywareApps.add(appInfo);
                     } catch (PackageManager.NameNotFoundException e) {
-                        //Log.w("SpywareDetector", "Package not found: " + appID, e);
+                    Log.w(TAG, "Package not found: " + appID, e);
                     }
                 }
             }
@@ -248,47 +262,64 @@ import com.cgutman.adblib.AdbBase64;
          * @return The list of installed app Ids
          **/
         public List<String> fetchAppsFromTargetDevice(Context context) {
-            List<String> packageNames = new ArrayList<>(); // List to store the installed app Ids
-            mManager = (UsbManager) context.getSystemService(Context.USB_SERVICE); // Get the USB manager
-    
-            try {
-                if (adbCrypto == null) { // Generate the ADB key pair if it's not already generated
-                    adbCrypto = AdbCrypto.generateAdbKeyPair(new AdbBase64() {
-                        @Override
-                        public String encodeToString(byte[] data) {
-                            return Base64.encodeToString(data, Base64.NO_WRAP);
-                        }
-                    });
-                }
-            } catch (NoSuchAlgorithmException e) { // Catch any exceptions that occur while generating the ADB key pair
-                Log.e("SpywareDetector", "Error generating ADB key pair", e);
+        List<String> packageNames = new ArrayList<>();
+        isScanning = true;
+        AdbStream stream = null;
+        
+        try {
+            if (!maintainConnection(context)) {
+                Log.e(TAG, "Failed to establish/maintain ADB connection");
                 return packageNames;
             }
     
-            for (String k : mManager.getDeviceList().keySet()) { // Iterate through all the devices in the USB manager
-                UsbDevice usbDevice = mManager.getDeviceList().get(k); // Get the USB device
-                if (mManager.hasPermission(usbDevice)) { // Check if the device has permission
-                    UsbInterface intf = findAdbInterface(usbDevice); // Find the ADB interface on the device
-                    if (intf != null) { // Check if the ADB interface is found
-                        try {
-                            if (setAdbInterface(usbDevice, intf)) {
-                                Log.d("SpywareDetector", "ADB interface set successfully");
-                                packageNames.addAll(executeCommand("pm list packages")); // Execute the ADB command to fetch the list of installed app Ids
-                            } else { // Log an error if the ADB interface is not set
-                                Log.e("SpywareDetector", "Failed to set ADB interface");
+            synchronized(adbLock) {
+                try {
+                    // Open shell stream
+                    stream = adbConnection.open("shell:");
+                    Log.d(TAG, "ADB shell stream opened successfully");
+                    
+                    // Get package list
+                    String output = executeAdbCommand(stream, "/system/bin/pm list packages");
+                    
+                    // Parse package names from output
+                    if (output != null && !output.isEmpty()) {
+                        String[] lines = output.split("\n");
+                        for (String line : lines) {
+                            line = line.trim();
+                            if (line.startsWith("package:")) {
+                                String packageName = line.substring(8).trim(); // Remove "package:" prefix
+                                packageNames.add(packageName);
                             }
-                        } catch (IOException | InterruptedException e) { // Catch any exceptions that occur while setting the ADB interface
-                            Log.e("SpywareDetector", "Error setting ADB interface", e);
                         }
-                    } else { // Log an error if no ADB interface is found
-                        Log.e("SpywareDetector", "No ADB interface found");
+                        Log.d(TAG, "Found " + packageNames.size() + " packages");
+                    } else {
+                        Log.e(TAG, "No output from pm list packages command");
                     }
-                } else { // Request permission if the device does not have permission
-                    Log.d("SpywareDetector", "Requesting USB permission");
-                    mManager.requestPermission(usbDevice, PendingIntent.getBroadcast(context, 0, new Intent("com.htetznaing.adbotg.USB_PERMISSION"), PendingIntent.FLAG_IMMUTABLE));
+
+                    // Send exit command to close shell
+                    stream.write("exit\n".getBytes(StandardCharsets.UTF_8));
+                    Thread.sleep(100);
+
+                } finally {
+                    // Always close the stream
+                    if (stream != null) {
+                        try {
+                            stream.close();
+                            Log.d(TAG, "ADB shell stream closed");
+                        } catch (IOException e) {
+                            Log.e(TAG, "Error closing stream", e);
+                        }
+                    }
                 }
             }
-            return packageNames; // Return the list of installed app Ids
+        } catch (Exception e) {
+            Log.e(TAG, "Error fetching apps", e);
+        } finally {
+            isScanning = false;
+        }
+        
+        Log.d(TAG, "Returning " + packageNames.size() + " package names");
+        return packageNames;
         }
     
 
@@ -360,7 +391,7 @@ import com.cgutman.adblib.AdbBase64;
                 try {
                     // Establish connection if needed
                     if (adbConnection == null || !isAdbConnected) {
-                        if (!establishAdbConnection(AppContextHolder.getContext())) {
+                    if (!establishAdbConnection(applicationContext)) {
                             Log.e("SpywareDetector", "Failed to establish ADB connection");
                             return;
                         }
@@ -461,113 +492,359 @@ import com.cgutman.adblib.AdbBase64;
          **/                    
         private Map<String, String> fetchAppMetadataFromTarget(Context context, String packageName, List<List<String>> csvData) {
             Map<String, String> appMetadata = new HashMap<>();
-            CountDownLatch latch = new CountDownLatch(1);
-
-            Thread metadataThread = new Thread(() -> {
-                try {
-                    // If the ADB connection is not established, establish it
-                    if (!isAdbConnected) {
-                        if (!establishAdbConnection(context)) {
-                            Log.e("SpywareDetector", "Failed to establish ADB connection");
-                            return;
-                        }
-                    }
-
-                    // Command to fetch app name using dumpsys
-                    String nameCommand = "cmd package list packages -f " + packageName;
-                    String nameOutput = executeAdbCommand(nameCommand);
-
-                    if (nameOutput != null && !nameOutput.isEmpty()) {
-                        String[] lines = nameOutput.split("\n");
-                        for (String line : lines) {
-                            if (line.contains(packageName)) {
-                                // Parse the package path
-                                String apkPath = line.substring(8, line.lastIndexOf("="));
-                                
-                                // Use aapt to get the application label
-                                String aaptCommand = "aapt dump badging " + apkPath + " | grep application-label:";
-                                String aaptOutput = executeAdbCommand(aaptCommand);
-                                
-                                if (aaptOutput != null && !aaptOutput.isEmpty()) {
-                                    if (aaptOutput.contains("application-label:")) {
-                                        String appName = aaptOutput.substring(
-                                            aaptOutput.indexOf("'") + 1, 
-                                            aaptOutput.lastIndexOf("'")
-                                        ).trim();
-                                        
-                                        if (!appName.isEmpty()) {
-                                            appMetadata.put("name", appName);
-                                            Log.d("SpywareDetector", "Found app name: " + appName + " for package: " + packageName);
-                                        }
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
-
-                    // Fetch installer info
-                    String installerCommand = "pm list packages -i " + packageName;
-                    String installerOutput = executeAdbCommand(installerCommand);
-
-                    if (installerOutput != null && !installerOutput.isEmpty()) {
-                        String[] lines = installerOutput.split("\n");
-                        if (lines.length > 0 && lines[0].contains("installer=")) {
-                            String installer = lines[0].substring(lines[0].indexOf("installer=") + 10).trim();
-                            appMetadata.put("installer", installer);
-                            Log.d("SpywareDetector", "Found installer: " + installer + " for package: " + packageName);
-                        }
-                    }
-
-                } catch (Exception e) {
-                    Log.e("SpywareDetector", "Error fetching app metadata for " + packageName, e);
-                } finally {
-                    latch.countDown();
-                }
-            });
-
-            metadataThread.start();
             
             try {
-                // Wait for the metadata fetch to complete with a timeout
-                if (!latch.await(30, TimeUnit.SECONDS)) {
-                    Log.e("SpywareDetector", "Timeout while fetching metadata for " + packageName);
+                // Get app info from CSV first
+                String[] csvInfo = getAppInfoFromCsv(packageName, csvData);
+                String csvFlag = (csvInfo != null) ? csvInfo[1] : null;  // Get flag from CSV
+                
+                if (csvInfo != null) {
+                    appMetadata.put("store", csvInfo[0]);
+                    appMetadata.put("flag", csvFlag);
+                    appMetadata.put("name", csvInfo[2]);
                 }
-            } catch (InterruptedException e) {
-                Log.e("SpywareDetector", "Interrupted while fetching metadata for " + packageName, e);
-            }
 
-            // If no name was found, use the name from CSV data
-            if (!appMetadata.containsKey("name")) {
-                String csvName = "Unknown App";
-                // Look for the app in the CSV data
-                for (List<String> row : csvData) {
-                    if (!row.isEmpty() && row.get(0).trim().equals(packageName)) {
-                        // Get name from column 4 (index 3)
-                        if (row.size() > 3 && row.get(3) != null && !row.get(3).trim().isEmpty()) {
-                            csvName = row.get(3).trim();
-                            break;
+                // Get installer info from a new stream
+                AdbStream stream = null;
+                try {
+                    stream = adbConnection.open("shell:");
+                    String installerCommand = "pm list packages -i " + packageName;
+                    String installerOutput = executeAdbCommand(stream, installerCommand);
+                    
+                    // Parse installer info
+                    String installer = "Unknown";
+                    if (installerOutput != null && installerOutput.contains("installer=")) {
+                        installer = installerOutput.substring(installerOutput.indexOf("installer=") + 10).trim();
+                        if (installer.equals("null") || installer.isEmpty()) {
+                            installer = "Unknown";
+                        }
+                    }
+                    appMetadata.put("installer", installer);
+
+                    // Determine color based on CSV flag only for now
+                    String color = "red"; // Default color
+                    if (csvFlag != null) {
+                        switch (csvFlag) {
+                            case "dual-use":
+                                color = "blue";
+                                break;
+                            case "spyware":
+                                color = "yellow";
+                                break;
+                        }
+                    }
+                    appMetadata.put("color", color);
+
+                } finally {
+                    if (stream != null) {
+                        try {
+                            stream.close();
+                        } catch (IOException e) {
+                            Log.e(TAG, "Error closing stream", e);
                         }
                     }
                 }
-                appMetadata.put("name", csvName);
-                Log.w("SpywareDetector", "Using CSV name for package: " + packageName + " -> " + csvName);
+            } catch (Exception e) {
+                Log.e(TAG, "Error fetching metadata for " + packageName, e);
+                return getDefaultMetadata(packageName, csvData);
             }
-
+            
             return appMetadata;
         }
 
+    private String[] getAppInfoFromCsv(String packageName, List<List<String>> csvData) {
+        if (csvData != null) {
+            for (List<String> row : csvData) {
+                if (row.size() >= 4 && row.get(0).equals(packageName)) {
+                    return new String[]{
+                        row.get(1),  // store
+                        row.get(2),  // flag
+                        row.get(3)   // title
+                    };
+                }
+            }
+        }
+        return null;
+    }
+
+    // Add helper method to get default metadata
+    private Map<String, String> getDefaultMetadata(String packageName, List<List<String>> csvData) {
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put("name", getAppNameFromCsv(packageName, csvData));
+        metadata.put("installer", "Unknown");
+        return metadata;
+    }
+
+    // Add helper method to get app name from CSV
+    private String getAppNameFromCsv(String packageName, List<List<String>> csvData) {
+                for (List<String> row : csvData) {
+            if (row.size() > 3 && row.get(0).equals(packageName)) {
+                return row.get(3); // Return the title from CSV
+            }
+        }
+        return packageName; // Fallback to package name if not found in CSV
+    }
+
+    // Update executeAdbCommand to handle InterruptedException
+    private String executeAdbCommand(AdbStream stream, String command) throws IOException, InterruptedException {
+        StringBuilder response = new StringBuilder();
+        
+        try {
+            Log.d(TAG, "Executing ADB command: " + command);
+            
+            // Send command with explicit newline and exit
+            stream.write((command + "\nexit\n").getBytes(StandardCharsets.UTF_8));
+            
+            // Read with timeout
+            long startTime = System.currentTimeMillis();
+            boolean foundPrompt = false;
+            int timeoutMs = 10000;
+            boolean isFirstChunk = true;
+            int emptyReads = 0;
+            
+            while (System.currentTimeMillis() - startTime < timeoutMs && !foundPrompt) {
+                byte[] data = stream.read();
+                if (data == null || data.length == 0) {
+                    Thread.sleep(100);
+                    emptyReads++;
+                    if (emptyReads > 50) { // 5 seconds of empty reads
+                                break;
+                            }
+                    continue;
+                }
+                emptyReads = 0;
+                
+                String chunk = new String(data, StandardCharsets.UTF_8);
+                Log.d(TAG, "Raw chunk: " + chunk);
+                
+                // Skip command echo and prompt in first chunk
+                if (isFirstChunk) {
+                    int promptIndex = chunk.indexOf("pnangn:/ $");
+                    if (promptIndex >= 0) {
+                        chunk = chunk.substring(promptIndex + "pnangn:/ $".length());
+                    }
+                    isFirstChunk = false;
+                }
+                
+                // Skip shell prompt lines
+                if (chunk.trim().equals("pnangn:/ $")) {
+                    foundPrompt = true;
+                    continue;
+                }
+                
+                // Add the chunk to response if it contains package data
+                if (chunk.contains("package:") || !command.contains("list packages")) {
+                    response.append(chunk);
+                }
+                
+                // Check if we've reached the shell prompt
+                if (chunk.contains("\npnangn:/ $")) {
+                    foundPrompt = true;
+                }
+            }
+            
+            // Clean up the response
+            String result = response.toString()
+                .replaceAll("\0", "")           // Remove null bytes
+                .replaceAll("\r", "")           // Remove CR
+                .replaceAll("pnangn:/ \\$.*$", "") // Remove shell prompt
+                .replaceAll("^\\s*" + command + "\\s*", "") // Remove command echo
+                .trim();                        // Remove extra whitespace
+                
+            Log.d(TAG, "Clean result: " + result);
+            
+            return result;
+            
+        } catch (IOException | InterruptedException e) {
+            Log.e(TAG, "Error executing command: " + command, e);
+            throw e;
+        }
+    }
     
         /**
          * Establish the ADB connection to the target device
          * @param context - The context of the application
          * @return True if the connection is established successfully, false otherwise
          **/
-        private boolean establishAdbConnection(Context context) {
-            mManager = (UsbManager) context.getSystemService(Context.USB_SERVICE); // Get the USB manager
+    private synchronized boolean establishAdbConnection(Context context) {
+        try {
+            if (adbConnection != null && isAdbConnected) {
+                return true;
+            }
 
-            // Generate the ADB key pair (public and private keys to authenticate the connection) if it's not already generated
-            try {
+            // Get USB manager
+            mManager = (UsbManager) context.getSystemService(Context.USB_SERVICE);
+            if (mManager == null) {
+                Log.e(TAG, "Failed to get USB manager");
+                return false;
+            }
+
+            // Find ADB device
+            HashMap<String, UsbDevice> deviceList = mManager.getDeviceList();
+            for (UsbDevice device : deviceList.values()) {
+                if (isAdbDevice(device)) {
+                    mDevice = device;
+                    break;
+                }
+            }
+
+            if (mDevice == null) {
+                Log.e(TAG, "No ADB device found");
+                return false;
+            }
+
+            // Check/request permission
+            if (!mManager.hasPermission(mDevice)) {
+                Log.d(TAG, "Requesting USB device permission");
+                PendingIntent permissionIntent = PendingIntent.getBroadcast(
+                    context, 0, new Intent(ACTION_USB_PERMISSION), 
+                    PendingIntent.FLAG_IMMUTABLE);
+                mManager.requestPermission(mDevice, permissionIntent);
+                return false;
+            }
+
+            // Open device connection
+            UsbDeviceConnection connection = mManager.openDevice(mDevice);
+            if (connection == null) {
+                Log.e(TAG, "Failed to open USB device connection");
+                return false;
+            }
+
+            // Find and claim ADB interface
+            UsbInterface adbInterface = null;
+            for (int i = 0; i < mDevice.getInterfaceCount(); i++) {
+                UsbInterface intf = mDevice.getInterface(i);
+                if (intf.getInterfaceClass() == 255 && 
+                    intf.getInterfaceSubclass() == 66 &&
+                    intf.getInterfaceProtocol() == 1) {
+                    adbInterface = intf;
+                    break;
+                }
+            }
+
+            if (adbInterface == null) {
+                Log.e(TAG, "ADB interface not found");
+                connection.close();
+                return false;
+            }
+
+            if (!connection.claimInterface(adbInterface, true)) {
+                Log.e(TAG, "Failed to claim ADB interface");
+                connection.close();
+                return false;
+            }
+
+            // Initialize ADB connection
+            UsbChannel usbChannel = new UsbChannel(connection, adbInterface);
+            adbConnection = AdbConnection.create(usbChannel, getAdbCrypto(context));
+            adbConnection.connect();
+
+            Log.d(TAG, "ADB interface set successfully");
+            isAdbConnected = true;
+            return true;
+
+                } catch (Exception e) {
+            Log.e(TAG, "Error establishing ADB connection", e);
+            isAdbConnected = false;
+            adbConnection = null;
+            return false;
+        }
+    }
+
+    /**
+     * Checks if the device is an ADB device by checking its interface properties
+     */
+    private static boolean isAdbDevice(UsbDevice device) {
+        // Check if this is an ADB interface
+        for (int i = 0; i < device.getInterfaceCount(); i++) {
+            UsbInterface intf = device.getInterface(i);
+            if (intf.getInterfaceClass() == 255 && 
+                intf.getInterfaceSubclass() == 66 &&
+                intf.getInterfaceProtocol() == 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Add connection management methods
+    public synchronized boolean maintainConnection(Context context) {
+        synchronized(adbLock) {
+            if (!isAdbConnected || adbConnection == null) {
+                for (int retry = 0; retry < MAX_RETRIES; retry++) {
+                    if (establishAdbConnection(context)) {
+                        Log.d(TAG, "ADB connection established on retry " + retry);
+                        return true;
+                    }
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS);
+            } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+                Log.e(TAG, "Failed to establish ADB connection after " + MAX_RETRIES + " retries");
+                return false;
+            }
+            return true;
+        }
+    }
+
+    public void closeConnection() {
+        synchronized(adbLock) {
+            if (adbConnection != null) {
+                try {
+                    adbConnection.close();
+                } catch (IOException e) {
+                    Log.e(TAG, "Error closing ADB connection", e);
+                }
+                adbConnection = null;
+            }
+            isAdbConnected = false;
+        }
+    }
+
+    public boolean isConnected() {
+        synchronized(adbLock) {
+            return isAdbConnected && adbConnection != null;
+        }
+    }
+
+    public AdbConnection getAdbConnection() {
+        synchronized(adbLock) {
+            return adbConnection;
+        }
+    }
+
+    /**
+     * Get or generate the ADB crypto keys
+         * @param context - The context of the application
+     * @return The ADB crypto keys
+     */
+    private AdbCrypto getAdbCrypto(Context context) throws NoSuchAlgorithmException, IOException, InvalidKeySpecException {
+        if (adbCrypto == null) {
+            File keyFile = new File(context.getFilesDir(), "adbkey");
+            File pubKeyFile = new File(context.getFilesDir(), "adbkey.pub");
+
+            if (keyFile.exists() && pubKeyFile.exists()) {
+                // Load existing keys
+                try {
+                    adbCrypto = AdbCrypto.loadAdbKeyPair(new AdbBase64() {
+                        @Override
+                        public String encodeToString(byte[] data) {
+                            return Base64.encodeToString(data, Base64.NO_WRAP);
+                        }
+                    }, keyFile, pubKeyFile);
+                } catch (InvalidKeySpecException e) {
+                    Log.e(TAG, "Invalid key format, generating new keys", e);
+                    // Delete invalid keys
+                    keyFile.delete();
+                    pubKeyFile.delete();
+                    // Fall through to generate new keys
+                }
+            }
+
+            // Generate new keys if loading failed or files don't exist
                 if (adbCrypto == null) {
                     adbCrypto = AdbCrypto.generateAdbKeyPair(new AdbBase64() {
                     @Override
@@ -575,104 +852,224 @@ import com.cgutman.adblib.AdbBase64;
                         return Base64.encodeToString(data, Base64.NO_WRAP);
                     }
                 });
-            }
-            // Catch any exceptions that occur while generating the ADB key pair
-        } catch (NoSuchAlgorithmException e) {
-            Log.e("SpywareDetector", "Error generating ADB key pair", e);
-            return false;
-        }
-
-        // Iterate through all the devices in the USB manager
-        for (String k : mManager.getDeviceList().keySet()) {
-            UsbDevice usbDevice = mManager.getDeviceList().get(k); // Get the USB device
-            if (mManager.hasPermission(usbDevice)) { // Check if the device has permission
-                UsbInterface intf = findAdbInterface(usbDevice); // Find the ADB interface on the device
-                if (intf != null) {
-                    try {
-                        if (setAdbInterface(usbDevice, intf)) { // Set the ADB interface
-                            Log.d("SpywareDetector", "ADB interface set successfully");
-                            isAdbConnected = true; // Set the flag
-                            return true; // Return true if the connection is established successfully
-                        } 
-                        else { // Log an error if the ADB interface is not set
-                            Log.e("SpywareDetector", "Failed to set ADB interface");
-                        }
-                    } catch (IOException | InterruptedException e) { // Catch any exceptions that occur while setting the ADB interface
-                        Log.e("SpywareDetector", "Error setting ADB interface", e);
-                    }
-                } else { // Log an error if no ADB interface is found
-                    Log.e("SpywareDetector", "No ADB interface found");
-                }
-            } else { // Request permission if the device does not have permission
-                Log.d("SpywareDetector", "Requesting USB permission");
-                mManager.requestPermission(usbDevice, PendingIntent.getBroadcast(context, 0, new Intent("com.htetznaing.adbotg.USB_PERMISSION"), PendingIntent.FLAG_IMMUTABLE));
+                // Save the keys
+                adbCrypto.saveAdbKeyPair(keyFile, pubKeyFile);
             }
         }
-        isAdbConnected = false; // Reset the flag if connection fails
-        return false;
+        return adbCrypto;
     }
 
     /**
-         * Execute the ADB command and return the output
-         * @param command - The ADB command to execute
-         * @return The output of the command
-         **/
-        private static String executeAdbCommand(String command) {
-            StringBuilder output = new StringBuilder();
-            boolean success = false;
-            int retryCount = 0;
-            final int maxRetries = 3;
+     * Requests USB permission for ADB connection.
+     * @param context The application context
+     */
+    public static void requestUsbPermission(Context context) {
+        Log.d(TAG, "Requesting USB device permission");
+        UsbManager usbManager = (UsbManager) context.getSystemService(Context.USB_SERVICE);
+        
+        if (usbManager == null) {
+            Log.e(TAG, "Failed to get USB manager");
+            broadcastConnectionStatus(context, false);
+            return;
+        }
 
-            // Execute the command until it's successful or the maximum number of retries is reached
-            while (!success && retryCount < maxRetries) {
-                AdbStream stream = null;
-                try {
-                    stream = adbConnection.open("shell:" + command);
-                    while (!stream.isClosed()) {
-                        try {
-                            byte[] data = stream.read(); // Read the stream
-                            if (data == null) {
-                                Log.d("SpywareDetector", "No more data to read, closing stream.");
-                                success = true;
-                                break;
-                            }
-                            output.append(new String(data, StandardCharsets.US_ASCII)); // Append the output to the StringBuilder
-                        } catch (IOException e) {
-                            Log.e("SpywareDetector", "Error reading from stream, retrying...", e);
+        // Get all available devices and find ADB device
+        HashMap<String, UsbDevice> deviceList = usbManager.getDeviceList();
+        UsbDevice adbDevice = null;
+
+        for (UsbDevice device : deviceList.values()) {
+            if (isAdbDevice(device)) {
+                adbDevice = device;
                             break;
                         }
                     }
-                    success = true;
-                } catch (IOException | InterruptedException e) {
-                    Log.e("SpywareDetector", "Error executing ADB command, retrying...", e);
+
+        if (adbDevice == null) {
+            Log.e(TAG, "No ADB device found");
+            broadcastConnectionStatus(context, false);
+            return;
+        }
+
+        // Create permission intent
+        PendingIntent permissionIntent = PendingIntent.getBroadcast(
+            context,
+            0,
+            new Intent(ACTION_USB_PERMISSION),
+            PendingIntent.FLAG_MUTABLE
+        );
+
+        // Request permission
+        usbManager.requestPermission(adbDevice, permissionIntent);
+    }
+
+    public void resetConnection() {
+        synchronized (connectionLock) {
+            isAdbConnected = false;
+            if (adbConnection != null) {
+                try {
+                    adbConnection.close();
+                        } catch (IOException e) {
+                    Log.e(TAG, "Error closing ADB connection", e);
+                }
+                adbConnection = null;
+            }
+            mDevice = null;
+        }
+    }
+
+    public void connect(Context context) {
+        synchronized (connectionLock) {
+            try {
+                if (establishAdbConnection(context)) {
+                    Log.d(TAG, "ADB connection established successfully");
+                    broadcastConnectionStatus(context, true);
+                } else {
+                    Log.d(TAG, "Failed to establish ADB connection");
+                    broadcastConnectionStatus(context, false);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to establish ADB connection", e);
+                broadcastConnectionStatus(context, false);
+            }
+        }
+    }
+
+    private static void broadcastConnectionStatus(Context context, boolean isConnected) {
+        Intent intent = new Intent("com.htetznaing.adbotg.USB_STATUS");
+        intent.putExtra("isConnected", isConnected);
+        context.sendBroadcast(intent);
+    }
+
+    public String executeShellCommand(String command) throws Exception {
+        synchronized(adbLock) {
+            if (!isConnected()) {
+                throw new Exception("ADB not connected");
+            }
+
+                AdbStream stream = null;
+                try {
+                // Open shell without the command
+                stream = adbConnection.open("shell:");
+                Log.d(TAG, "Shell opened successfully");
+                
+                // Wait for shell prompt
+                Thread.sleep(100);
+                
+                // Write command and wait for completion marker
+                String fullCommand = command + "; echo $?; echo '---END---'\n";
+                stream.write(fullCommand.getBytes(StandardCharsets.UTF_8));
+                Log.d(TAG, "Command written: " + fullCommand);
+                
+                StringBuilder output = new StringBuilder();
+                byte[] buffer;
+                
+                // Read until we see our marker
+                while ((buffer = stream.read()) != null) {
+                    String data = new String(buffer, StandardCharsets.UTF_8);
+                    Log.d(TAG, "Received data chunk: [" + data + "]");
+                    if (data.contains("---END---")) {
+                                break;
+                            }
+                    output.append(data);
+                }
+
+                String result = output.toString()
+                    .replace("---END---", "")
+                    .replaceAll("\\r\\n$", "")
+                    .replaceAll("\\$", "")
+                    .trim();
+                    
+                Log.d(TAG, "Shell command executed: " + command);
+                Log.d(TAG, "Raw output: [" + result + "]");
+                
+                // Check if we got an error code
+                if (result.endsWith("1") || result.endsWith("127")) {
+                    throw new Exception("Command failed with error: " + result);
+                }
+                
+                return result;
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error executing shell command: " + command, e);
+                throw e;
                 } finally {
                     if (stream != null) {
                         try {
                             stream.close();
                         } catch (IOException e) {
-                            Log.e("SpywareDetector", "Error closing stream", e);
-                        }
-                    }
-                }
-
-                if (!success) {
-                    retryCount++; // Increment the retry count
-                    Log.d("SpywareDetector", "Retry attempt " + retryCount + " for command: " + command);
-                    try {
-                        Thread.sleep(1000); // Sleep for 1 second before retrying
-                    } catch (InterruptedException e) {
-                        Log.e("SpywareDetector", "Retry sleep interrupted", e);
+                        Log.e(TAG, "Error closing stream", e);
                     }
                 }
             }
+        }
+    }
 
-            // If the command is not executed successfully after the maximum number of retries, log an error
-            if (!success) {
-                Log.e("SpywareDetector", "Failed to execute command after " + maxRetries + " attempts: " + command);
-            }
+    // Add this getter method
+    public Object getAdbLock() {
+        return adbLock;
+    }
 
-            return output.toString(); // Return the output of the command as a String
+    // Add AppInfo as inner class
+    private static class AppInfo {
+        private final String packageName;
+        private final String type;
+
+        public AppInfo(String packageName, String type) {
+            this.packageName = packageName;
+            this.type = type;
         }
 
+        public String getPackageName() {
+            return packageName;
+        }
+
+        public String getType() {
+            return type;
+        }
+    }
+
+    private Map<String, AppInfo> compareWithCSV(String csvData, Map<String, String> installerMap) {
+        Map<String, AppInfo> detectedApps = new HashMap<>();
+        String[] lines = csvData.split("\n");
+
+        for (Map.Entry<String, String> entry : installerMap.entrySet()) {
+            String packageName = entry.getKey();
+            String installer = entry.getValue();
+            boolean isSecureInstaller = isSecureInstaller(installer);
+
+            // Check each line in CSV
+            for (String line : lines) {
+                String[] parts = line.split(",");
+                if (parts.length >= 3 && parts[0].trim().equals(packageName)) {
+                    String type = parts[1].trim().toUpperCase();
+                    String flags = parts[2].trim().toUpperCase();
+
+                    if (isSecureInstaller) {
+                        // For secure installers, use the type from CSV
+                        detectedApps.put(packageName, new AppInfo(packageName, type));
+                    } else {
+                        // For unsecure/unknown installers, mark as OFFSTORE
+                        detectedApps.put(packageName, new AppInfo(packageName, "OFFSTORE"));
+                    }
+                    break;
+                }
+            }
+        }
+        
+        // Add debug logging
+        for (Map.Entry<String, AppInfo> entry : detectedApps.entrySet()) {
+            Log.d(TAG, "App: " + entry.getKey() + " Type: " + entry.getValue().getType() + 
+                  " Installer: " + installerMap.get(entry.getKey()));
+        }
+        
+        return detectedApps;
+    }
+
+    private boolean isSecureInstaller(String installer) {
+        return installer != null && !installer.isEmpty() && !installer.equals("null") && !installer.equals("Unknown") &&
+            (installer.contains("com.android.vending") || // Google Play
+             installer.contains("com.google.android.packageinstaller") || // System installer
+             installer.contains("com.samsung.android.app.store")); // Samsung Store
+    }
 }
 
