@@ -1,106 +1,98 @@
 # SafeScan - Spyware Detection Tool
 
 ## Overview
-SafeScan utilizes [ADB-OTG](https://github.com/KhunHtetzNaing/ADB-OTG) and extends its functionality to create a comprehensive spyware detection tool. The project aims to assist victims of Intimate Partner Violence (IPV) by providing a secure way to detect and manage potential spyware and privacy risks on their devices.
-
-### Project Evolution
-This repository builds upon the original [SafeScan](https://github.com/BriLeighk/SafeScan) project, which provided comprehensive app and privacy scanning for source devices. The current version extends these capabilities by:
-- Integrating ADB functionality for target device scanning
-- Maintaining consistent connection state across the application
-- Implementing modular feature migration from the original SafeScan
-- Enhancing security and reliability for dual-device operations
+SafeScan is a comprehensive spyware detection tool designed to assist victims of Intimate Partner Violence (IPV) by providing a secure way to detect and manage potential spyware and privacy risks on Android devices. The app uses ADB (Android Debug Bridge) over USB-OTG to scan target devices without requiring root access.
 
 ## Key Features
 
-### Completed Features
-- **Device Connection**
-  - USB OTG connection between devices without requiring root access
-  - ADB command execution from source to target device
-  - Device selection dropdown for managing source/target operations
-
-- **App Detection**
-  - Scanning of installed applications against known spyware/dual-use app database
+### App Detection
+- **Comprehensive App Scanning**
+  - Scans installed applications against known spyware/dual-use app database
   - Risk categorization system:
     - Red: Off-store downloads (highest risk)
     - Yellow: Known spyware applications
-    - Light Blue: Dual-use applications (potential for misuse)
+    - Blue: Dual-use applications (potential for misuse)
   - Integration with remote CSV database for up-to-date threat detection
+  - Secure installer verification (Play Store, System, Samsung Store)
 
-- **User Interface**
-  - Clean, intuitive interface for both technical and non-technical users
-  - Clear visual indicators for connection status and scan results
-  - Informative permission descriptions and privacy recommendations
+### Privacy Analysis
+- **Permission Monitoring**
+  - Detailed permission analysis for installed apps
+  - Privacy recommendations based on app permissions
+  - Direct links to app settings for quick modifications
 
-### In Development
-+ **High Priority**
-- [ ] App icon retrieval for detected applications
-- [ ] Comprehensive permission analysis for detected applications
-- [ ] Direct Android settings access for listed applications
-- [ ] ADB connection stability improvements
-- [ ] Global ADB connection state management
+### Device Connection
+- **Secure USB Connection**
+  - USB OTG connection between devices
+  - No root access required
+  - Real-time connection state management
+  - Clear visual indicators for connection status
 
-+ **Upcoming Features**
- - [ ] Privacy Scan implementation (migration from original SafeScan)
-   - Device privacy settings analysis
-   - Social media privacy recommendations
-   - Google account security checkup
-- [ ] Target device support for privacy scanning
+### User Interface
+- Clean, intuitive interface designed for accessibility
+- Clear visual indicators for scan results
+- Detailed privacy recommendations
+- Step-by-step connection guidance
 
-+ **Note:** The Privacy Scan feature from the original SafeScan repository is currently not implemented in this version. The Privacy Scan tab exists in the interface but is non-functional until the feature migration is complete.
+## Technical Architecture
 
-## Technical Improvements Over ADB-OTG
-1. **Enhanced Security**
-   - Improved error handling in USB connections
-   - Added timeout protection for ADB operations
-   - Implemented thread-safe operations
+### Core Components
+- **Native Android (Java)**
+  - ADB protocol implementation
+  - USB host API integration
+  - Package manager interface
+  - Permission management
 
-2. **Extended Functionality**
-   - Added spyware detection capabilities
-   - Implemented dual-device scanning
-   - Integrated with external threat database
+- **Flutter UI Layer**
+  - Cross-platform UI components
+  - State management
+  - CSV data processing
+  - Privacy analysis logic
 
-3. **Improved Architecture**
-   - Modular code structure
-   - Clear separation of concerns
-   - Enhanced documentation
-
-## Technology Stack
-- **Core Technologies**
-  - Java (Android native development)
-  - ADB Protocol Implementation
-  - AndroidX Libraries
-  - Flutter/Dart (UI and business logic)
-
-- **Key Components**
-  - ADBLib (Modified for enhanced security)
-  - USB Host API
-  - Android Package Manager
-  - Flutter Method Channels
+### Key Technologies
+- Java (Android native development)
+- Flutter/Dart (UI and business logic)
+- ADB Protocol Implementation
+- AndroidX Libraries
 
 ## Getting Started
 
 ### Prerequisites
-- Android device with USB Host support
-- USB OTG cable
-- Target Android device
+- Source device with:
+  - Android 5.0 or higher
+  - USB Host support
+  - USB OTG cable
+- Target Android device with:
+  - USB debugging enabled
+  - Screen unlocked during scan
 
 ### Installation
+1. Download the latest release from the releases page
+2. Install on the source device (device performing the scan)
+3. Enable developer options on target device
+4. Enable USB debugging on target device
+
+### Basic Usage
+1. Launch SafeScan on source device
+2. Connect target device via USB OTG cable
+3. Accept USB debugging prompt on target device
+4. Select desired scan type
+5. Review scan results and recommendations
+
+## Development Setup
 1. Clone the repository:
    ```bash
-   git clone https://github.com/BriLeighk/SafeScan.git
+   git clone https://github.com/WISPR-lab/safescan.git
    ```
-2. Build the project:
+2. Set up Flutter environment
+3. Install Android Studio and required SDKs
+4. Build the project:
    ```bash
+   flutter pub get
    ./gradlew build
    ```
-
-### Usage
-1. Connect source device (with SafeScan installed) to target device via USB
-2. Launch SafeScan
-3. Establish ADB connection
-4. Select desired scan type (App, Privacy coming soon)
-5. View and analyze results
 
 ## Acknowledgments
 - Original ADB-OTG project by KhunHtetzNaing
 - ADB library developed by wuxudong
+- Research support from WISPR Lab
