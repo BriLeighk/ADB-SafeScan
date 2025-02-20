@@ -1,5 +1,7 @@
 # Privacy Scan Module
+# Privacy Scan Module
 
+A Flutter module that provides privacy scanning capabilities for the SafeScan application. This module handles both app scanning and privacy settings analysis for source and target devices.
 A Flutter module that provides privacy scanning capabilities for the SafeScan application. This module handles both app scanning and privacy settings analysis for source and target devices.
 
 ## Features
