@@ -13,6 +13,7 @@ import android.hardware.usb.UsbManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -83,10 +84,17 @@ public class MainActivity extends AppCompatActivity implements TextView.OnEditor
     private FlutterEngine flutterEngine;
     private boolean usbConnectionDetected = false;
     private MethodChannel methodChannel;
+    private SpywareDetector detector;
+    private ApplicationController appController;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        appController = ApplicationController.getInstance();
+        detector = SpywareDetector.getInstance();
+        
+        // Keep screen on during scanning
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_main);
 
         // Initialize MethodChannel
@@ -114,11 +122,14 @@ public class MainActivity extends AppCompatActivity implements TextView.OnEditor
                     case DEVICE_FOUND:
                         closeWaiting();
                         tvStatus.setText(getString(R.string.adb_device_connected));
-                        tvStatus.setTextColor(Color.parseColor("#4CAF50"));
-                        usb_icon.setColorFilter(Color.parseColor("#4CAF50"));
-                        checkContainer.setVisibility(View.VISIBLE);
-                        initCommand(); // Initiate adb connection command
-                        sendConnectionStatusBroadcast(true); // Notify Flutter
+                        usb_icon.setImageResource(R.drawable.ic_usb);
+                        usb_icon.setColorFilter(ContextCompat.getColor(MainActivity.this, R.color.colorPrimary));
+                        terminalView.setVisibility(View.VISIBLE);
+                        checkContainer.setVisibility(View.GONE);
+                        // Initialize command after ensuring connection
+                        if (detector.isConnected()) {
+                            initCommand();
+                        }
                         break;
 
                     case CONNECTING:
@@ -191,6 +202,11 @@ public class MainActivity extends AppCompatActivity implements TextView.OnEditor
                             PendingIntent.FLAG_IMMUTABLE));
                 }
             }
+        }
+
+        // Initialize connection
+        if (appController.initializeConnection()) {
+            handler.sendEmptyMessage(DEVICE_FOUND);
         }
 
         edCommand.setImeActionLabel("Run", EditorInfo.IME_ACTION_DONE);
@@ -346,8 +362,15 @@ public class MainActivity extends AppCompatActivity implements TextView.OnEditor
     }
 
     @Override
-    public void onResume() {
+    protected void onResume() {
         super.onResume();
+        detector.maintainConnection(this);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        detector.closeConnection();
     }
 
     @Override
@@ -362,75 +385,82 @@ public class MainActivity extends AppCompatActivity implements TextView.OnEditor
         } catch (IOException e) {
             e.printStackTrace();
         }
+        // Only close connection if app is actually being destroyed
+        if (isFinishing()) {
+            appController.closeConnection();
+        }
     }
 
     /**
      * Initializes the command input and output.
      */
-    private void initCommand(){
-        // Open the shell stream of ADB
+    private void initCommand() {
         logs.setText("");
         try {
-            stream = adbConnection.open("shell:");
-        } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
-            return;
-        } catch (IOException e) {
-            e.printStackTrace();
-            return;
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-            return;
-        }
+            if (!detector.isConnected()) {
+                Log.e(Const.TAG, "ADB connection not available");
+                return;
+            }
+            
+            AdbConnection connection = detector.getAdbConnection();
+            if (connection == null) {
+                Log.e(Const.TAG, "ADB connection is null");
+                return;
+            }
 
-        // Start the receiving thread
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                while (!stream.isClosed()) {
-                    try {
-                        // Print each thing we read from the shell stream
-                        final String[] output = {new String(stream.read(), "US-ASCII")};
-                        runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                if (user == null) {
-                                    user = output[0].substring(0,output[0].lastIndexOf("/")+1);
-                                }else if (output[0].contains(user)){
-                                    System.out.println("End => "+user);
-                                }
-
-                                logs.append(output[0]);
-
-                                scrollView.post(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        scrollView.fullScroll(ScrollView.FOCUS_DOWN);
-                                        edCommand.requestFocus();
+            stream = connection.open("shell:");
+            
+            // Start the receiving thread
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    while (!stream.isClosed()) {
+                        try {
+                            // Print each thing we read from the shell stream
+                            final String[] output = {new String(stream.read(), "US-ASCII")};
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    if (user == null) {
+                                        user = output[0].substring(0,output[0].lastIndexOf("/")+1);
+                                    }else if (output[0].contains(user)){
+                                        System.out.println("End => "+user);
                                     }
-                                });
-                            }
-                        });
-                    } catch (UnsupportedEncodingException e) {
-                        e.printStackTrace();
-                        return;
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                        return;
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                        return;
+
+                                    logs.append(output[0]);
+
+                                    scrollView.post(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            scrollView.fullScroll(ScrollView.FOCUS_DOWN);
+                                            edCommand.requestFocus();
+                                        }
+                                    });
+                                }
+                            });
+                        } catch (UnsupportedEncodingException e) {
+                            e.printStackTrace();
+                            return;
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                            return;
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                            return;
+                        }
                     }
                 }
-            }
-        }).start();
+            }).start();
 
-        btnRun.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                putCommand();
-            }
-        });
+            btnRun.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    putCommand();
+                }
+            });
+        } catch (Exception e) {
+            Log.e(Const.TAG, "Error initializing command", e);
+        }
     }
 
     /**

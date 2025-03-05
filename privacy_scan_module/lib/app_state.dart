@@ -3,10 +3,14 @@ import 'package:flutter/services.dart';
 
 class AppState extends ChangeNotifier {
   bool _isConnected = false;
-  String _selectedDevice = 'Target'; // Default to target device
-  final String _sourceDeviceName = 'Source';
-  final String _targetDeviceName = 'Target';
+
+  // Use private static constants
+  static const _kSourceDevice = 'Source';
+  static const _kTargetDevice = 'Target';
   static const platform = MethodChannel('com.htetznaing.adbotg/usb_receiver');
+
+  // Initialize with Source as default
+  String _selectedDevice = _kSourceDevice;
 
   AppState() {
     _initUsbConnectionListener();
@@ -14,17 +18,19 @@ class AppState extends ChangeNotifier {
 
   bool get isConnected => _isConnected;
   String get selectedDevice => _selectedDevice;
-  String get sourceDeviceName => _sourceDeviceName;
-  String get targetDeviceName => _targetDeviceName;
+  String get sourceDeviceName => _kSourceDevice;
+  String get targetDeviceName => _kTargetDevice;
 
   void _initUsbConnectionListener() {
     platform.setMethodCallHandler((call) async {
       if (call.method == 'usbConnected') {
         _setConnectedState(true);
-        selectDevice(_targetDeviceName); // Set default to target when connected
+        setSelectedDevice(
+            _kTargetDevice); // Set default to target when connected
       } else if (call.method == 'usbDisconnected') {
         _setConnectedState(false);
-        selectDevice(_sourceDeviceName); // Default to source when disconnected
+        setSelectedDevice(
+            _kSourceDevice); // Default to source when disconnected
       }
     });
   }
@@ -36,10 +42,15 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void selectDevice(String deviceName) {
-    if (_selectedDevice != deviceName) {
-      _selectedDevice = deviceName;
+  void setSelectedDevice(String device) {
+    if (device != _selectedDevice) {
+      _selectedDevice = device;
       notifyListeners();
     }
+  }
+
+  // Optional: Reset to source device when no target is connected
+  void resetToSource() {
+    setSelectedDevice(_kSourceDevice);
   }
 }

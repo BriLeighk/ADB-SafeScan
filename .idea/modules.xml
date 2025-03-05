@@ -23,6 +23,9 @@
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/-1264324741/ADB-SafeScan.url_launcher_android.androidTest.iml" filepath="$PROJECT_DIR$/.idea/modules/-1264324741/ADB-SafeScan.url_launcher_android.androidTest.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/-1264324741/ADB-SafeScan.url_launcher_android.main.iml" filepath="$PROJECT_DIR$/.idea/modules/-1264324741/ADB-SafeScan.url_launcher_android.main.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/-1264324741/ADB-SafeScan.url_launcher_android.unitTest.iml" filepath="$PROJECT_DIR$/.idea/modules/-1264324741/ADB-SafeScan.url_launcher_android.unitTest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/-1609129810/gradle.iml" filepath="$PROJECT_DIR$/.idea/modules/-1609129810/gradle.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/-1609129810/gradle.main.iml" filepath="$PROJECT_DIR$/.idea/modules/-1609129810/gradle.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/-1609129810/gradle.test.iml" filepath="$PROJECT_DIR$/.idea/modules/-1609129810/gradle.test.iml" />
     </modules>
   </component>
 </project>

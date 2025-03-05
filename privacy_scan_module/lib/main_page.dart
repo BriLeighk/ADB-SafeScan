@@ -4,6 +4,7 @@ import 'app_state.dart';
 import 'app_scan_page.dart';
 import 'privacy_scan_page.dart';
 import 'package:flutter/services.dart';
+import 'adb_info_page.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key, required this.title});
@@ -23,6 +24,13 @@ class _MainPageState extends State<MainPage> {
     } on PlatformException catch (e) {
       print("Failed to open MainActivity: '${e.message}'.");
     }
+  }
+
+  void _openAdbInfo() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const AdbInfoPage()),
+    );
   }
 
   @override
@@ -51,7 +59,7 @@ class _MainPageState extends State<MainPage> {
                 ],
                 onChanged: (String? newValue) {
                   if (newValue != null) {
-                    appState.selectDevice(newValue);
+                    appState.setSelectedDevice(newValue);
                   }
                 },
               ),
@@ -59,8 +67,23 @@ class _MainPageState extends State<MainPage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.usb),
-            onPressed: _openMainActivity,
+            icon: Icon(
+              appState.isConnected ? Icons.usb : Icons.usb_off,
+              color: appState.isConnected ? Colors.green : Colors.red,
+            ),
+            onPressed: _openAdbInfo,
+            tooltip: 'ADB Connection Info',
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () async {
+              try {
+                await platform.invokeMethod('retryConnection');
+              } catch (e) {
+                print("Failed to retry connection: $e");
+              }
+            },
+            tooltip: 'Retry Connection',
           ),
         ],
       ),
@@ -114,8 +137,7 @@ class _MainPageState extends State<MainPage> {
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          const PrivacyScanPage(scanTarget: true),
+                      builder: (context) => const PrivacyScanPage(),
                     ),
                   ),
                   child: const Text('Perform Privacy Scan'),

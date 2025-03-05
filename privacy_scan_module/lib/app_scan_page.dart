@@ -56,7 +56,7 @@ class _AppScanPageState extends State<AppScanPage> {
       name: 'Location Sharing',
       icon: Icons.location_on,
       description:
-          'Grants access to your active location. While essential for navigation and weather apps, it can serve details such as your home address, routes you’ve taken, and other sensitive information to the apps that enable it. It is best to stay cautious and only enable location sharing if absolutely necessary.',
+          'Grants access to your active location. While essential for navigation and weather apps, it can serve details such as your home address, routes you\'ve taken, and other sensitive information to the apps that enable it. It is best to stay cautious and only enable location sharing if absolutely necessary.',
     ),
     PermissionInfo(
       name: 'Camera',
@@ -150,7 +150,7 @@ class _AppScanPageState extends State<AppScanPage> {
   }
 
   Color lightColor(Map<String, dynamic> app, String installer, String type) {
-    if (installer == null || installer != 'com.android.vending') {
+    if (installer != 'com.android.vending') {
       return const Color.fromARGB(255, 255, 177, 177);
     } else {
       if (type == 'offstore') {
@@ -195,7 +195,7 @@ class _AppScanPageState extends State<AppScanPage> {
                 ],
                 onChanged: (String? newValue) {
                   if (newValue != null) {
-                    appState.selectDevice(newValue);
+                    appState.setSelectedDevice(newValue);
                   }
                 },
               ),
@@ -359,5 +359,18 @@ int _getSortWeight(String type, String installer) {
     } else {
       return 5;
     }
+  }
+}
+
+Color _getColorForType(String type) {
+  switch (type.toUpperCase()) {
+    case 'SPYWARE':
+      return Colors.yellow;
+    case 'DUAL_USE':
+      return Colors.blue;
+    case 'OFFSTORE':
+      return Colors.red;
+    default:
+      return Colors.grey;
   }
 }
