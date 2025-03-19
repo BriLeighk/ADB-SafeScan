@@ -41,21 +41,18 @@ public class PrivacySettingsHandler {
     private static final String TAG = "PrivacySettingsHandler";
     private final SpywareDetector spywareDetector;
     private final Context context;
+    private static PrivacySettingsHandler instance;
 
     // List of known social media and dual-use apps
     private static final Map<String, String[]> MONITORED_APPS = new HashMap<String, String[]>() {{
         // Social Media Apps
-        put("com.instagram.android", new String[]{"Instagram", "Photo sharing, messaging"});
-        put("com.snapchat.android", new String[]{"Snapchat", "Ephemeral messaging, location sharing"});
-        put("com.whatsapp", new String[]{"WhatsApp", 
-            "Popular messaging app that can be used to monitor communications",
-            "Remove if not actively used",
-            "Check app permissions",
-            "Review privacy settings"});
-        put("com.facebook.katana", new String[]{"Facebook", "Social networking, messaging"});
+        put("com.instagram.android", new String[]{"Instagram", "Photo and video sharing social network"});
+        put("com.snapchat.android", new String[]{"Snapchat", "Multimedia messaging app"});
+        put("com.whatsapp", new String[]{"WhatsApp", "Messaging and voice/video call app"});
+        put("com.facebook.katana", new String[]{"Facebook", "Social networking platform"});
         put("com.facebook.orca", new String[]{"Messenger", "Messaging, location sharing"});
-        put("com.zhiliaoapp.musically", new String[]{"TikTok", "Video sharing, messaging"});
-        put("com.twitter.android", new String[]{"Twitter", "Social networking, messaging"});
+        put("com.zhiliaoapp.musically", new String[]{"TikTok", "Short-form video sharing platform"});
+        put("com.twitter.android", new String[]{"Twitter", "Social networking and microblogging service"});
         
         // Cloud Storage (potential data exfiltration)
         put("com.dropbox.android", new String[]{"Dropbox", "File storage, sharing"});
@@ -77,23 +74,20 @@ public class PrivacySettingsHandler {
         put("com.life360.android.safetymapd", new String[]{"Life360", "Location tracking, sharing"});
     }};
 
-    private static PrivacySettingsHandler instance;
-
-    public static void setup(BinaryMessenger messenger) {
+    public static PrivacySettingsHandler getInstance(Context context, SpywareDetector detector) {
         if (instance == null) {
-            instance = new PrivacySettingsHandler(
-                ApplicationController.getAppContext(),
-                SpywareDetector.getInstance()
-            );
+            instance = new PrivacySettingsHandler(context, detector);
         }
-        new MethodChannel(messenger, CHANNEL).setMethodCallHandler((call, result) -> {
-            handleMethodCall(call, result);
-        });
+        return instance;
     }
 
-    public PrivacySettingsHandler(Context context, SpywareDetector detector) {
+    private PrivacySettingsHandler(Context context, SpywareDetector detector) {
         this.context = context;
         this.spywareDetector = detector;
+    }
+
+    public static void setup(BinaryMessenger messenger) {
+        new MethodChannel(messenger, CHANNEL);
     }
 
     private static void handleMethodCall(MethodCall call, MethodChannel.Result result) {
@@ -235,228 +229,125 @@ public class PrivacySettingsHandler {
     }
 
     public List<Map<String, Object>> getSocialMediaApps(boolean fromTarget) {
-        List<Map<String, Object>> apps = new ArrayList<>();
-        
-        if (fromTarget) {
-            if (spywareDetector == null || !spywareDetector.isConnected()) {
-                Log.e(TAG, "ADB not connected for target device");
-                return apps;
-            }
+        List<Map<String, Object>> socialMediaApps = new ArrayList<>();
+        PackageManager pm = context.getPackageManager();
 
+        if (fromTarget) {
+            // Handle target device apps
             try {
-                List<String> detectedPackages = executeCommand("/system/bin/pm list packages");
-                
-                for (String packageName : detectedPackages) {
+                List<String> targetApps = spywareDetector.fetchAppsFromTargetDevice(context);
+                for (String packageName : targetApps) {
                     if (MONITORED_APPS.containsKey(packageName)) {
-                        try {
-                            Map<String, Object> appData = new HashMap<>();
-                            appData.put("packageName", packageName);
-                            appData.put("name", MONITORED_APPS.get(packageName)[0]);
-                            appData.put("description", getAppDescription(packageName));
-                            // Use a placeholder icon string that's valid base64
-                            appData.put("icon", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
-                            appData.put("recommendations", Arrays.asList(MONITORED_APPS.get(packageName)));
-                            
-                            apps.add(appData);
-                            Log.d(TAG, "Successfully added target app: " + packageName);
-                        } catch (Exception e) {
-                            Log.e(TAG, "Error getting target app info for " + packageName, e);
-                        }
+                        Map<String, Object> appInfo = new HashMap<>();
+                        String[] appData = MONITORED_APPS.get(packageName);
+                        appInfo.put("name", appData[0]);
+                        appInfo.put("packageName", packageName);
+                        appInfo.put("description", appData[1]);
+                        appInfo.put("icon", getDefaultAppIconBase64());
+                        appInfo.put("recommendations", getPrivacyRecommendations(packageName));
+                        appInfo.put("permissions", new ArrayList<>()); // Empty list for target device
+                        socialMediaApps.add(appInfo);
                     }
                 }
             } catch (Exception e) {
-                Log.e(TAG, "Error getting target apps", e);
+                Log.e(TAG, "Error fetching target device apps", e);
             }
         } else {
-            // Source device code
-            PackageManager pm = context.getPackageManager();
-            List<ApplicationInfo> installedApps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
-            Set<String> installedPackages = new HashSet<>();
-            for (ApplicationInfo app : installedApps) {
-                installedPackages.add(app.packageName);
-            }
-
-            for (Map.Entry<String, String[]> entry : MONITORED_APPS.entrySet()) {
-                String packageName = entry.getKey();
-                if (!installedPackages.contains(packageName)) {
-                    Log.d(TAG, "Skipping " + packageName + " - not installed");
-                    continue;
-                }
-
-                try {
-                    ApplicationInfo appInfo = pm.getApplicationInfo(packageName, 0);
-                    Map<String, Object> appData = new HashMap<>();
-                    appData.put("packageName", packageName);
-                    appData.put("name", entry.getValue()[0]); // Get first element of array
-                    appData.put("description", getAppDescription(packageName));
-                    appData.put("icon", getAppIconBase64(appInfo, pm));
-                    appData.put("recommendations", Arrays.asList(entry.getValue())); // Convert array to List
-                    apps.add(appData);
-                    Log.d(TAG, "Successfully added source app: " + packageName);
-                } catch (Exception e) {
-                    Log.e(TAG, "Error getting source app info for " + packageName, e);
-                }
-            }
-        }
-        
-        return apps;
-    }
-
-    private List<String> executeCommand(String command) {
-        List<String> detectedPackages = new ArrayList<>();
-        final StringBuilder[] outputHolder = new StringBuilder[]{ new StringBuilder() };
-        Set<String> processedPackages = new HashSet<>();
-        AtomicBoolean isComplete = new AtomicBoolean(false);
-        
-        Thread commandThread = new Thread(() -> {
-            AdbStream stream = null;
+            // Handle source device apps
             try {
-                // Open a single stream for the command
-                stream = spywareDetector.getAdbConnection().open("shell:" + command);
-                
-                // Read data until the stream is closed or we have all packages
-                while (!stream.isClosed()) {
-                    byte[] data = stream.read(); // This blocks until data is available
-                    if (data == null) {
-                        // End of stream reached
-                        Log.d(TAG, "End of stream reached");
-                        break;
-                    }
-
-                    // Append new data to output buffer
-                    outputHolder[0].append(new String(data, StandardCharsets.US_ASCII));
-                    
-                    // Process complete lines
-                    String[] lines = outputHolder[0].toString().split("\n");
-                    int lastCompleteLine = lines.length - 1;
-                    
-                    // Don't process the last line if it doesn't end with newline
-                    // (it might be incomplete)
-                    if (!outputHolder[0].toString().endsWith("\n")) {
-                        lastCompleteLine--;
-                    }
-                    
-                    // Process complete lines
-                    for (int i = 0; i <= lastCompleteLine; i++) {
-                        String line = lines[i].trim();
-                        if (line.startsWith("package:")) {
-                            String packageName = line.replace("package:", "").trim();
-                            if (!packageName.isEmpty() && !processedPackages.contains(packageName)) {
-                                detectedPackages.add(packageName);
-                                processedPackages.add(packageName);
-                            }
-                        }
-                    }
-                    
-                    // Keep any incomplete line for next iteration
-                    if (lastCompleteLine < lines.length - 1) {
-                        outputHolder[0] = new StringBuilder(lines[lines.length - 1]);
-                    } else {
-                        outputHolder[0] = new StringBuilder();
-                    }
-
-                    // Check if we've reached the end of the package list
-                    // This assumes the last line after packages will be a shell prompt
-                    String lastLine = lines[lines.length - 1].trim();
-                    if (!lastLine.isEmpty() && !lastLine.contains("package:") && 
-                        (lastLine.endsWith("$") || lastLine.endsWith("#"))) {
-                        Log.d(TAG, "Found shell prompt, command complete");
-                        break;
+                List<ApplicationInfo> installedApps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
+                for (ApplicationInfo appInfo : installedApps) {
+                    String packageName = appInfo.packageName;
+                    if (MONITORED_APPS.containsKey(packageName)) {
+                        Map<String, Object> app = new HashMap<>();
+                        app.put("name", pm.getApplicationLabel(appInfo).toString());
+                        app.put("packageName", packageName);
+                        app.put("description", MONITORED_APPS.get(packageName)[1]);
+                        app.put("icon", getAppIconBase64(appInfo, pm));
+                        app.put("recommendations", getPrivacyRecommendations(packageName));
+                        
+                        // Get permissions using AppDetailsFetcher
+                        List<Map<String, String>> permissions = AppDetailsFetcher.getAppPermissions(packageName);
+                        app.put("permissions", permissions);
+                        
+                        socialMediaApps.add(app);
                     }
                 }
-                
-                isComplete.set(true);
-                
-            } catch (IOException | InterruptedException e) {
-                Log.e(TAG, "Error in command execution", e);
-            } finally {
-                if (stream != null) {
-                    try {
-                        stream.close();
-                    } catch (IOException e) {
-                        Log.e(TAG, "Error closing stream", e);
-                    }
-                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error fetching source device apps", e);
             }
-        });
-
-        commandThread.start();
-        
-        try {
-            // Wait for the command thread with timeout
-            commandThread.join(30000);
-            if (commandThread.isAlive()) {
-                commandThread.interrupt();
-                Log.e(TAG, "Command thread timed out");
-            }
-        } catch (InterruptedException e) {
-            Log.e(TAG, "Command thread interrupted");
-            commandThread.interrupt();
         }
 
-        // Add debug log
-        Log.d(TAG, "Detected packages: " + detectedPackages.toString());
-
-        return detectedPackages;
+        return socialMediaApps;
     }
 
     private String getAppIconBase64(ApplicationInfo appInfo, PackageManager pm) {
         try {
             Drawable drawable = pm.getApplicationIcon(appInfo);
             Bitmap bitmap;
-            
             if (drawable instanceof BitmapDrawable) {
                 bitmap = ((BitmapDrawable) drawable).getBitmap();
             } else {
                 bitmap = Bitmap.createBitmap(drawable.getIntrinsicWidth(),
-                    drawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
+                        drawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
                 Canvas canvas = new Canvas(bitmap);
                 drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
                 drawable.draw(canvas);
             }
-
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos);
-            byte[] imageBytes = baos.toByteArray();
-            return Base64.encodeToString(imageBytes, Base64.NO_WRAP);
+            return Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
         } catch (Exception e) {
-            Log.e(TAG, "Error converting app icon to base64", e);
-            return "";
+            return getDefaultAppIconBase64();
         }
     }
 
-    private String getAppDescription(String packageName) {
-        String[] appInfo = MONITORED_APPS.get(packageName);
-        return appInfo != null ? appInfo[1] : "Social media application";
+    private String getDefaultAppIconBase64() {
+        // Return a base64 string of a default icon
+        // This is a placeholder - you should replace with an actual default icon
+        return "";
     }
 
     private List<String> getPrivacyRecommendations(String packageName) {
-        // Base recommendations for all apps
-        List<String> recommendations = new ArrayList<>(Arrays.asList(
-            "Review app permissions regularly",
-            "Enable two-factor authentication if available",
-            "Check privacy settings after each app update",
-            "Be cautious when sharing location data"
-        ));
+        List<String> recommendations = new ArrayList<>();
+        
+        // Add base recommendations
+        recommendations.add("Review app permissions regularly");
+        recommendations.add("Enable two-factor authentication if available");
+        recommendations.add("Check privacy settings after each app update");
 
         // Add app-specific recommendations
-        if (packageName.equals("com.instagram.android")) {
-            recommendations.addAll(Arrays.asList(
-                "Set account to private",
-                "Disable activity status",
-                "Review tagged photos before they appear",
-                "Limit story visibility"
-            ));
-        } else if (packageName.equals("com.snapchat.android")) {
-            recommendations.addAll(Arrays.asList(
-                "Enable Ghost Mode for location",
-                "Set story visibility to 'Friends Only'",
-                "Review who can contact you",
-                "Disable Quick Add"
-            ));
-        }
-        // Add more app-specific recommendations as needed
+        switch (packageName) {
+            case "com.instagram.android":
+                recommendations.add("Set account to private");
+                recommendations.add("Control who can message you");
+                break;
 
+            case "com.snapchat.android":
+                recommendations.add("Enable Ghost Mode");
+                recommendations.add("Set story visibility to 'Friends Only'");
+                break;
+
+            case "com.whatsapp":
+                recommendations.add("Review who can see your profile");
+                recommendations.add("Control 'Last Seen' visibility");
+                break;
+
+            case "com.facebook.katana":
+                recommendations.add("Review tagged posts before they appear");
+                recommendations.add("Set default post audience to 'Friends'");
+                break;
+
+            case "com.zhiliaoapp.musically":
+                recommendations.add("Set account to private");
+                recommendations.add("Disable 'Allow others to find me'");
+                break;
+
+            case "com.google.android.apps.maps":
+                recommendations.add("Use incognito mode for sensitive navigation");
+                break;
+        }
+        
         return recommendations;
     }
 
@@ -488,27 +379,5 @@ public class PrivacySettingsHandler {
             }
         }
         return null;
-    }
-
-    private String getDefaultAppIconBase64() {
-        try {
-            // Create a simple default icon - a colored square with app initials
-            Bitmap defaultIcon = Bitmap.createBitmap(144, 144, Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(defaultIcon);
-            
-            // Fill with a default color
-            Paint paint = new Paint();
-            paint.setColor(Color.GRAY);
-            canvas.drawRect(0, 0, 144, 144, paint);
-
-            // Convert to Base64
-            ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-            defaultIcon.compress(Bitmap.CompressFormat.PNG, 100, byteStream);
-            byte[] byteArray = byteStream.toByteArray();
-            return Base64.encodeToString(byteArray, Base64.DEFAULT);
-        } catch (Exception e) {
-            Log.e(TAG, "Error creating default icon", e);
-            return "";
-        }
     }
 } 

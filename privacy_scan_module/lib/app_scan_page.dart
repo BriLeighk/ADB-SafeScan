@@ -15,26 +15,6 @@ class PermissionInfo {
       {required this.name, required this.icon, required this.description});
 }
 
-class PermissionIcon {
-  final String permission;
-  PermissionIcon({required this.permission});
-
-  IconData getIcon() {
-    switch (permission) {
-      case "location":
-        return Icons.location_on;
-      case "camera":
-        return Icons.camera_alt;
-      case "microphone":
-        return Icons.mic;
-      case "storage":
-        return Icons.folder;
-      default:
-        return Icons.security;
-    }
-  }
-}
-
 class AppScanPage extends StatefulWidget {
   final bool scanTarget;
 
@@ -46,7 +26,8 @@ class AppScanPage extends StatefulWidget {
 
 class _AppScanPageState extends State<AppScanPage> {
   static const platform = MethodChannel('samples.flutter.dev/spyware');
-  static const settingsChannel = MethodChannel('com.example.spyware/settings');
+  static const settingsChannel =
+      MethodChannel('com.htetznaing.adbotg/privacy_settings');
   bool _searchPerformed = false;
   bool _isLoading = false;
   List<Map<String, dynamic>> _spywareApps = [];
@@ -125,18 +106,53 @@ class _AppScanPageState extends State<AppScanPage> {
     }
   }
 
-  List<Widget> _buildPermissionsInfo() {
-    return _permissionsInfo.map((PermissionInfo info) {
-      return ExpansionTile(
-        leading: Icon(info.icon),
-        title: Text(info.name),
-        children: <Widget>[
-          ListTile(
-            title: Text(info.description),
-          ),
-        ],
+  List<Widget> _buildPermissionInfoIcons(BuildContext context) {
+    return _permissionsInfo.map((info) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+        child: Column(
+          children: [
+            IconButton(
+              icon: Icon(
+                info.icon,
+                color: Colors.grey[700],
+                size: 24.0,
+              ),
+              onPressed: () => _showPermissionInfo(context, info),
+              tooltip: info.name,
+            ),
+            Text(
+              info.name.split(' ')[0], // Just show first word
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
       );
     }).toList();
+  }
+
+  void _showPermissionInfo(BuildContext context, PermissionInfo info) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(info.icon, color: Colors.grey[700]),
+              const SizedBox(width: 8.0),
+              Text(info.name),
+            ],
+          ),
+          content: Text(info.description),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _openAppSettings(String package) async {
@@ -150,19 +166,33 @@ class _AppScanPageState extends State<AppScanPage> {
   }
 
   Color lightColor(Map<String, dynamic> app, String installer, String type) {
-    if (installer != 'com.android.vending') {
-      return const Color.fromARGB(255, 255, 177, 177);
-    } else {
-      if (type == 'offstore') {
-        return const Color.fromARGB(255, 255, 177, 177);
-      } else if (type == 'spyware' || type == 'Unknown') {
-        return const Color.fromARGB(255, 255, 255, 173);
-      } else if (type == 'dual-use') {
-        return const Color.fromARGB(255, 175, 230, 255);
-      } else {
-        return Colors.grey;
+    // For target device apps, use the type directly
+    if (app['isTargetDevice'] == true) {
+      switch (app['type'].toString().toLowerCase()) {
+        case 'dual-use':
+          return const Color.fromARGB(255, 175, 230, 255); // blue
+        case 'spyware':
+          return const Color.fromARGB(255, 255, 255, 173); // yellow
+        default:
+          return const Color.fromARGB(255, 255, 177, 177); // red
       }
     }
+
+    // For source device apps, use the existing installer-based logic
+    if (installer.contains('com.android.vending') ||
+        installer.contains('com.google.android.packageinstaller') ||
+        installer.contains('com.samsung.android.app.store')) {
+      switch (type.toLowerCase()) {
+        case 'dual-use':
+          return const Color.fromARGB(255, 175, 230, 255); // blue
+        case 'spyware':
+          return const Color.fromARGB(255, 255, 255, 173); // yellow
+        default:
+          return const Color.fromARGB(255, 255, 177, 177); // red
+      }
+    }
+    return const Color.fromARGB(
+        255, 255, 177, 177); // red for unknown/unsecure installers
   }
 
   @override
@@ -216,6 +246,28 @@ class _AppScanPageState extends State<AppScanPage> {
       ),
       body: Column(
         children: <Widget>[
+          if (Provider.of<AppState>(context).selectedDevice == 'Target')
+            Container(
+              padding: const EdgeInsets.all(8.0),
+              margin: const EdgeInsets.all(8.0),
+              decoration: BoxDecoration(
+                color: Colors.yellow[100],
+                borderRadius: BorderRadius.circular(8.0),
+                border: Border.all(color: Colors.yellow[700]!),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.orange),
+                  SizedBox(width: 8.0),
+                  Expanded(
+                    child: Text(
+                      'Note: For apps on the target device, we cannot verify the installation source. Apps are classified based on known data about their security risks.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const Padding(
             padding: EdgeInsets.all(4.0),
             child: Row(
@@ -241,8 +293,9 @@ class _AppScanPageState extends State<AppScanPage> {
           ),
           Padding(
             padding: const EdgeInsets.all(8.0),
-            child: Column(
-              children: _buildPermissionsInfo(),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: _buildPermissionInfoIcons(context),
             ),
           ),
           Expanded(
@@ -257,16 +310,28 @@ class _AppScanPageState extends State<AppScanPage> {
                           var app = _spywareApps[index];
                           Color baseColor =
                               lightColor(app, app['installer'], app['type']);
-                          List<PermissionIcon> permissions =
-                              (app['permissions'] as List<dynamic>? ?? [])
-                                  .map((perm) {
-                            return PermissionIcon(
-                              permission: perm['icon'],
-                            );
-                          }).toList();
                           return TextButton(
                               onPressed: () async {
-                                await _openAppSettings(app['id']);
+                                final appState = Provider.of<AppState>(context,
+                                    listen: false);
+                                if (appState.selectedDevice ==
+                                    appState.sourceDeviceName) {
+                                  try {
+                                    await settingsChannel.invokeMethod(
+                                        'openAppSettings',
+                                        {'package': app['id']});
+                                  } catch (e) {
+                                    print('Error opening app settings: $e');
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                            content: Text(
+                                                'Could not open app settings')),
+                                      );
+                                    }
+                                  }
+                                }
                               },
                               child: Container(
                                 margin: const EdgeInsets.all(.1),
@@ -276,27 +341,100 @@ class _AppScanPageState extends State<AppScanPage> {
                                 ),
                                 child: ListTile(
                                     tileColor: Colors.transparent,
-                                    leading: app['icon'] != null
-                                        ? Image.memory(base64Decode(
-                                            app['icon']?.trim() ?? ''))
-                                        : null,
-                                    title: RichText(
-                                      text: TextSpan(
-                                        style:
-                                            DefaultTextStyle.of(context).style,
-                                        children: <TextSpan>[
-                                          TextSpan(
-                                            text:
-                                                '${app['name'] ?? 'Unknown Name'}  ',
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.bold),
-                                          ),
-                                          TextSpan(
-                                            text:
-                                                '(${app['id'] ?? 'Unknown ID'})',
-                                          ),
-                                        ],
-                                      ),
+                                    leading: app['isTargetDevice'] == true
+                                        ? app['iconUrl'] != null
+                                            ? Image.network(
+                                                app['iconUrl'],
+                                                width: 40,
+                                                height: 40,
+                                                loadingBuilder: (context, child,
+                                                    loadingProgress) {
+                                                  if (loadingProgress == null)
+                                                    return child;
+                                                  return const SizedBox(
+                                                    width: 40,
+                                                    height: 40,
+                                                    child: Center(
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                        strokeWidth: 2.0,
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                                errorBuilder: (context, error,
+                                                    stackTrace) {
+                                                  print(
+                                                      'Primary icon load failed for ${app['id']}: $error');
+
+                                                  // Try backup URL if available
+                                                  if (app['backupIconUrl'] !=
+                                                      null) {
+                                                    return Image.network(
+                                                      app['backupIconUrl'],
+                                                      width: 40,
+                                                      height: 40,
+                                                      errorBuilder: (context,
+                                                          error, stackTrace) {
+                                                        print(
+                                                            'Backup icon load failed for ${app['id']}: $error');
+
+                                                        // Final fallback - use direct CDN URL
+                                                        final fallbackUrl =
+                                                            'https://play-lh.googleusercontent.com/icon?id=${app['id']}&w=48';
+                                                        return Image.network(
+                                                          fallbackUrl,
+                                                          width: 40,
+                                                          height: 40,
+                                                          errorBuilder:
+                                                              (context, error,
+                                                                  stackTrace) {
+                                                            return Container(
+                                                              width: 40,
+                                                              height: 40,
+                                                              decoration:
+                                                                  BoxDecoration(
+                                                                color: Colors
+                                                                    .grey[200],
+                                                                borderRadius:
+                                                                    BorderRadius
+                                                                        .circular(
+                                                                            8),
+                                                              ),
+                                                              child: const Icon(
+                                                                  Icons.android,
+                                                                  color: Colors
+                                                                      .grey),
+                                                            );
+                                                          },
+                                                        );
+                                                      },
+                                                    );
+                                                  }
+                                                  return Container(
+                                                    width: 40,
+                                                    height: 40,
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.grey[200],
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              8),
+                                                    ),
+                                                    child: const Icon(
+                                                        Icons.android,
+                                                        color: Colors.grey),
+                                                  );
+                                                },
+                                              )
+                                            : const Icon(Icons.android)
+                                        : app['icon'] != null
+                                            ? Image.memory(base64Decode(
+                                                app['icon']?.trim() ?? ''))
+                                            : const Icon(Icons.android),
+                                    title: Text(
+                                      app['name'] ?? 'Unknown Name',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold),
                                     ),
                                     trailing: secureInstallers
                                             .contains(app['installer'])
@@ -306,11 +444,18 @@ class _AppScanPageState extends State<AppScanPage> {
                                                 _launchURL(app['storeLink']),
                                           )
                                         : null,
-                                    subtitle: Row(
-                                      children: permissions.map((permIcon) {
-                                        return Icon(permIcon.getIcon(),
-                                            size: 18.0);
-                                      }).toList(),
+                                    subtitle: Builder(
+                                      builder: (context) {
+                                        print('App: ${app['name']}');
+                                        print(
+                                            'Permissions: ${app['permissions']}');
+                                        return Row(
+                                          children: _buildUniquePermissionIcons(
+                                              app['permissions']
+                                                      as List<dynamic>? ??
+                                                  []),
+                                        );
+                                      },
                                     )),
                               ));
                         },
@@ -373,4 +518,125 @@ Color _getColorForType(String type) {
     default:
       return Colors.grey;
   }
+}
+
+List<Widget> _buildUniquePermissionIcons(List<dynamic> permissions) {
+  print('Building icons for permissions: $permissions');
+  Set<String> uniquePermissions = Set<String>();
+  List<Widget> uniqueIcons = [];
+
+  for (var perm in permissions) {
+    print('Processing permission: $perm');
+    // Handle both string permissions and map permissions
+    String permType = '';
+    if (perm is String) {
+      permType = perm;
+    } else if (perm is Map) {
+      permType =
+          perm['permission']?.toString().split('.').last.toLowerCase() ?? '';
+      if (permType.contains('location'))
+        permType = 'location';
+      else if (permType.contains('camera'))
+        permType = 'camera';
+      else if (permType.contains('audio') || permType.contains('microphone'))
+        permType = 'microphone';
+      else if (permType.contains('storage') || permType.contains('media'))
+        permType = 'storage';
+    }
+
+    print('Extracted permission type: $permType');
+
+    if (permType.isNotEmpty && !uniquePermissions.contains(permType)) {
+      uniquePermissions.add(permType);
+      IconData iconData;
+      switch (permType) {
+        case 'location':
+          iconData = Icons.location_on;
+          break;
+        case 'camera':
+          iconData = Icons.camera_alt;
+          break;
+        case 'microphone':
+          iconData = Icons.mic;
+          break;
+        case 'storage':
+          iconData = Icons.folder;
+          break;
+        default:
+          print('Unknown permission type: $permType');
+          iconData = Icons.security;
+          break;
+      }
+      uniqueIcons.add(
+        Padding(
+          padding: const EdgeInsets.only(right: 8.0),
+          child: Icon(
+            iconData,
+            size: 20.0,
+            color: Colors.grey[700],
+          ),
+        ),
+      );
+    }
+  }
+
+  print('Generated unique icons: ${uniqueIcons.length}');
+  return uniqueIcons;
+}
+
+Widget _buildAppIcon(Map<String, dynamic> app) {
+  if (app['iconUrl'] == null) return const Icon(Icons.android);
+
+  return FadeInImage.assetNetwork(
+    placeholder:
+        'assets/app_icon_placeholder.png', // You'll need to add this asset
+    image: app['iconUrl'],
+    width: 40,
+    height: 40,
+    imageErrorBuilder: (context, error, stackTrace) {
+      print('Primary icon load failed for ${app['id']}: $error');
+
+      // Try backup URL if available
+      if (app['backupIconUrl'] != null) {
+        return FadeInImage.assetNetwork(
+          placeholder: 'assets/app_icon_placeholder.png',
+          image: app['backupIconUrl'],
+          width: 40,
+          height: 40,
+          imageErrorBuilder: (context, error, stackTrace) {
+            print('Backup icon load failed for ${app['id']}: $error');
+
+            // Try Play Store URL as final fallback
+            final playStoreUrl =
+                'https://play-lh.googleusercontent.com/icon?id=${app['id']}&w=96';
+            return Image.network(
+              playStoreUrl,
+              width: 40,
+              height: 40,
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.android, color: Colors.grey),
+                );
+              },
+            );
+          },
+        );
+      }
+      return const SizedBox(
+        width: 40,
+        height: 40,
+        child: Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 2.0,
+          ),
+        ),
+      );
+    },
+  );
 }

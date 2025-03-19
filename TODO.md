@@ -3,39 +3,39 @@
 ## Frontend Tasks (Flutter)
 
 ### App Scan Page (`privacy_scan_module/lib/app_scan_page.dart`)
-- [ ] Fix color assignment for target apps based on CSV classification
+- [x] Fix color assignment for target apps based on CSV classification
   - Currently shows all as unsecure/unknown despite secure installation status
   - Need to match source scan color logic
   - Affects `_getColorForType()` method
 
-- [ ] Remove duplicate permission icons in app listings
-  - Consolidate permission icon display logic
-  - Ensure each permission is shown only once per app
+- [x] Remove duplicate permission icons in app listings
+  [x] Consolidate permission icon display logic
+  [x]  Ensure each permission is shown only once per app
 
-- [ ] Redesign dropdown information display
+- [x] Redesign dropdown information display
   - Replace dropdowns with horizontal icon row
   - Implement info popup on icon click
   - Maintain existing text content in new format
 
-- [ ] Enhance app interaction functionality
-  - Make non-offstore SOURCE apps clickable to open settings
+- [x] Enhance app interaction functionality
+  [x] Make non-offstore SOURCE apps clickable to open settings
   - Make non-offstore TARGET apps clickable to launch where app was downloaded from
   - Update `_launchAppStore()` and related methods
 
 ### Privacy Scan Page (`privacy_scan_module/lib/privacy_scan_page.dart`)
-- [ ] Enhance privacy recommendations
-  - Add permission status checking
-  - Implement permission-specific recommendations
-  - Create recommendation templates for common permissions
-  - Handle both SOURCE and TARGET device permissions
+- [x] Enhance privacy recommendations
+  [x] Add permission status checking
+  [x] Implement permission-specific recommendations
+  [x] Create recommendation templates for common permissions
+  [x] Handle above for SOURCE device permissions
+  - Handle above for TARGET device permissions
 
 ## Backend Tasks (Java)
 
 ### SpywareDetector (`app/src/main/java/com/htetznaing/adbotg/SpywareDetector.java`)
-- [ ] Fix app classification logic for target devices
+- [x] Fix app classification logic for TARGET devices
   - Review `compareWithCSV()` method
-  - Ensure installer verification works correctly
-  - Match source device classification logic
+  - See if its possible to get the installer type from the target device through adb instead of just referencing csv flag with disclaimer to the user.
 
 ### App Icons
 - [ ] Implement icon retrieval for TARGET apps
@@ -44,7 +44,7 @@
   - Add to both app scan and privacy scan pages
 
 ### Permission Analysis (`app/src/main/java/com/htetznaing/adbotg/PrivacySettingsHandler.java`)
-- [ ] Implement TARGET device permission checking
+- [x] Implement TARGET device permission checking
   - Add ADB shell command execution for permission queries
   - Parse and return permission data to Flutter layer
   - Handle permission status interpretation
