@@ -17,6 +17,7 @@ import android.hardware.usb.UsbManager;
 import android.content.Context;
 import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -88,94 +89,140 @@ import com.cgutman.adblib.AdbBase64;
          * @return The list of detected spyware apps
          **/
         public static List<Map<String, Object>> getDetectedSpywareApps(List<List<String>> csvData, boolean isTargetDevice) {
-            Log.d("SpywareDetector", "Starting spyware app scan...");
-
-        List<String> ids = new ArrayList<>();
-        Map<String, String> types = new HashMap<>();
-        List<String> installedApps;
-        PackageManager packageManager = null;
-        List<Map<String, Object>> detectedSpywareApps = new ArrayList<>();  // Initialize the list here
-
-        // Parse CSV data
-        for (int i = 1; i < csvData.size(); i++) {
-                List<String> line = csvData.get(i);
-                if (!line.isEmpty()) {
-                    String appId = line.get(0).trim();
-                ids.add(appId);
-                    if (line.size() > 2) {
-                    types.put(appId, line.get(2).trim());
-                    }
-                }
-            }
-            Log.d("SpywareDetector", "Successfully added all csv app ids to ids list."); 
-
-        SpywareDetector detector = getInstance();
-
-        if (isTargetDevice) {
-            installedApps = detector.fetchAppsFromTargetDevice(detector.applicationContext);
-                Log.d("SpywareDetector", "Installed Apps on Target:" + installedApps.toString());
-        } else {
-            packageManager = detector.applicationContext.getPackageManager();
-            List<ApplicationInfo> appInfoList = packageManager.getInstalledApplications(PackageManager.GET_META_DATA);
-                installedApps = new ArrayList<>(); 
-                for (ApplicationInfo appInfo : appInfoList) {
-                    installedApps.add(appInfo.packageName); 
-                }
-                Log.d("SpywareDetector", "Installed Apps on Source:" + installedApps.toString());
-            }
-
-            for (String appID : installedApps) {
-                if (ids.contains(appID)) {
-                    try { 
-                        Map<String, String> appMetadata;
-                        String iconBase64;
-                    if (isTargetDevice) {
-                        appMetadata = detector.fetchAppMetadataFromTarget(detector.applicationContext, appID, csvData);
-                        Drawable placeholderIcon = detector.applicationContext.getDrawable(R.drawable.placeholder_icon);
-                            iconBase64 = getBase64IconFromDrawable(placeholderIcon);
-                    } else {
-                            String appName = packageManager.getApplicationLabel(packageManager.getApplicationInfo(appID, 0)).toString();
-                            iconBase64 = getBase64IconFromDrawable(packageManager.getApplicationIcon(appID));
-                            String installer = getInstallerPackageName(packageManager, appID);
-                            
-                            if (installer == null) {
-                                installer = "Unknown Installer";
+            List<Map<String, Object>> spywareApps = new ArrayList<>();
+            try {
+                PackageManager pm = AppContextHolder.getContext().getPackageManager();
+                
+                if (isTargetDevice) {
+                    // For target device, we get package names and process them differently
+                    List<String> targetPackages = getInstance().fetchAppsFromTargetDevice(getInstance().applicationContext);
+                    Log.d("SpywareDetector", "Installed Apps on Target:" + targetPackages.toString());
+                    
+                    for (String packageName : targetPackages) {
+                        try {
+                            String[] csvInfo = getAppInfoFromCsv(packageName, csvData);
+                            if (csvInfo != null) {
+                                Map<String, Object> appData = new HashMap<>();
+                                appData.put("id", packageName);
+                                appData.put("name", csvInfo[3]); // Use name from CSV
+                                
+                                // Use Play Store URL format
+                                String storeLink = String.format("https://play.google.com/store/apps/details?id=%s", packageName);
+                                
+                                // Use Play Store's CDN URL format
+                                String iconUrl = String.format("https://play-lh.googleusercontent.com/icon?id=%s&w=96", packageName);
+                                Log.d("SpywareDetector", "Constructed icon URL for " + packageName + ": " + iconUrl);
+                                appData.put("iconUrl", iconUrl);
+                                appData.put("storeLink", storeLink);
+                                
+                                // Add backup icon URL with alternative format
+                                String backupIconUrl = String.format("https://play.google.com/store/apps/icons/%s=w96-h96", packageName);
+                                appData.put("backupIconUrl", backupIconUrl);
+                                
+                                // Get app type and determine color/installer info
+                                String csvType = csvInfo[2].toLowerCase();
+                                
+                                switch (csvType) {
+                                    case "dual-use":
+                                        appData.put("type", "dual-use");
+                                        appData.put("installer", "dual-use");
+                                        break;
+                                    case "spyware":
+                                        appData.put("type", "spyware");
+                                        appData.put("installer", "spyware");
+                                        break;
+                                    default:
+                                        appData.put("type", "offstore");
+                                        appData.put("installer", "offstore");
+                                        break;
+                                }
+                                
+                                appData.put("isTargetDevice", true); // Flag to indicate this is a target device app
+                                
+                                // Get active permissions for target app
+                                List<Map<String, String>> permissions = getInstance().getTargetAppPermissions(packageName);
+                                appData.put("permissions", permissions);
+                                
+                                appData.put("disclaimer", "Note: For apps on the target device, we cannot verify the installation source. " +
+                                    "If you don't recognize this app or it was downloaded from the internet instead of an official store, " +
+                                    "treat it as a potentially unsecure offstore app.");
+                                
+                                spywareApps.add(appData);
                             }
-
-                            appMetadata = new HashMap<>();
-                            appMetadata.put("name", appName);
-                            appMetadata.put("installer", installer);
+                        } catch (Exception e) {
+                            Log.e("SpywareDetector", "Error processing target app: " + packageName, e);
                         }
+                    }
+                } else {
+                    // For source device, we can use the PackageManager directly
+                    List<ApplicationInfo> installedApps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
+                Log.d("SpywareDetector", "Installed Apps on Source:" + installedApps.toString());
 
-                        String storeLink = getStoreLink(appID, appMetadata.get("installer"));
-                        String appType = types.getOrDefault(appID, "Unknown");
-                        List<Map<String, String>> permissions = AppDetailsFetcher.getAppPermissions(appID);
-
-                        Map<String, Object> appInfo = new HashMap<>();
-                        appInfo.put("id", appID);
-                        appInfo.put("name", appMetadata.get("name"));
-                        appInfo.put("icon", iconBase64);
-                        appInfo.put("installer", appMetadata.get("installer"));
-                        appInfo.put("storeLink", storeLink);
-                        appInfo.put("type", appType);
-                        appInfo.put("permissions", permissions);
-
-                        detectedSpywareApps.add(appInfo);
-                    } catch (PackageManager.NameNotFoundException e) {
-                    Log.w(TAG, "Package not found: " + appID, e);
+                    for (ApplicationInfo appInfo : installedApps) {
+                        try {
+                            String appId = appInfo.packageName;
+                            String installer = getInstallerPackageName(pm, appId);
+                            String[] csvInfo = getAppInfoFromCsv(appId, csvData);
+                            
+                            if (csvInfo != null) {
+                                Map<String, Object> appData = new HashMap<>();
+                                appData.put("id", appId);
+                                appData.put("name", pm.getApplicationLabel(appInfo).toString());
+                                appData.put("icon", getBase64IconFromDrawable(pm.getApplicationIcon(appId)));
+                                appData.put("installer", installer != null ? installer : "unknown");
+                                appData.put("type", csvInfo[2]); // flag from CSV
+                                appData.put("storeLink", getStoreLink(appId, installer));
+                                
+                                // Add permissions information
+                                PackageInfo packageInfo = pm.getPackageInfo(appId, PackageManager.GET_PERMISSIONS);
+                                List<Map<String, String>> permissions = new ArrayList<>();
+                                
+                                Log.d("SpywareDetector", "Checking permissions for: " + appId);
+                                if (packageInfo.requestedPermissions != null) {
+                                    for (int i = 0; i < packageInfo.requestedPermissions.length; i++) {
+                                        String permission = packageInfo.requestedPermissions[i];
+                                        boolean isGranted = (packageInfo.requestedPermissionsFlags[i] & PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0;
+                                        Log.d("SpywareDetector", "Permission: " + permission + " isGranted: " + isGranted);
+                                        
+                                        if (isGranted) {
+                                            String icon = getPermissionIcon(permission);
+                                            Log.d("SpywareDetector", "Mapped to icon: " + icon);
+                                            if (icon != null) {
+                                                Map<String, String> permissionData = new HashMap<>();
+                                                permissionData.put("permission", permission);
+                                                permissionData.put("icon", icon);
+                                                permissions.add(permissionData);
+                                            }
+                                        }
+                                    }
+                                }
+                                Log.d("SpywareDetector", "Final permissions list: " + permissions);
+                                appData.put("permissions", permissions);
+                                spywareApps.add(appData);
+                            }
+                        } catch (Exception e) {
+                            Log.e("SpywareDetector", "Error processing app: " + appInfo.packageName, e);
+                        }
                     }
                 }
+            } catch (Exception e) {
+                Log.e("SpywareDetector", "Error getting installed apps", e);
             }
-            
-            /*
-            // Log the detected spyware apps (for debugging purposes)
-            for (int i = 0; i < detectedSpywareApps.size(); i++) {
-                Log.d("SpywareDetector", "Detected spyware apps: " + detectedSpywareApps.get(i));
+            return spywareApps;
+        }
+
+        private static String getPermissionIcon(String permission) {
+            String permLower = permission.toLowerCase();
+            if (permLower.contains("location")) {
+                return "location";
+            } else if (permLower.contains("camera")) {
+                return "camera";
+            } else if (permLower.contains("record_audio") || permLower.contains("microphone")) {
+                return "microphone";
+            } else if (permLower.contains("storage") || permLower.contains("media")) {
+                return "storage";
             }
-             
-             */
-            
-            return detectedSpywareApps;
+            return null;
         }
 
         
@@ -272,7 +319,7 @@ import com.cgutman.adblib.AdbBase64;
                 return packageNames;
             }
     
-            synchronized(adbLock) {
+            synchronized(adbLock) { // thread lock
                 try {
                     // Open shell stream
                     stream = adbConnection.open("shell:");
@@ -552,16 +599,23 @@ import com.cgutman.adblib.AdbBase64;
             return appMetadata;
         }
 
-    private String[] getAppInfoFromCsv(String packageName, List<List<String>> csvData) {
-        if (csvData != null) {
-            for (List<String> row : csvData) {
-                if (row.size() >= 4 && row.get(0).equals(packageName)) {
-                    return new String[]{
-                        row.get(1),  // store
-                        row.get(2),  // flag
-                        row.get(3)   // title
-                    };
-                }
+    private static String[] getAppInfoFromCsv(String packageName, List<List<String>> csvData) {
+        if (csvData == null || csvData.isEmpty() || packageName == null) {
+            return null;
+        }
+
+        // Skip header row if it exists
+        int startIndex = csvData.get(0).get(0).equals("appId") ? 1 : 0;
+
+        for (int i = startIndex; i < csvData.size(); i++) {
+            List<String> row = csvData.get(i);
+            if (!row.isEmpty() && row.get(0).equals(packageName)) {
+                return new String[] { 
+                    row.get(0),  // appId
+                    row.get(1),  // store
+                    row.get(2),  // flag
+                    row.get(3)   // title
+                };
             }
         }
         return null;
@@ -1070,6 +1124,103 @@ import com.cgutman.adblib.AdbBase64;
             (installer.contains("com.android.vending") || // Google Play
              installer.contains("com.google.android.packageinstaller") || // System installer
              installer.contains("com.samsung.android.app.store")); // Samsung Store
+    }
+
+    private List<Map<String, String>> getTargetAppPermissions(String packageName) {
+        List<Map<String, String>> permissions = new ArrayList<>();
+        AdbStream stream = null;
+        
+        try {
+            if (!maintainConnection(applicationContext)) {
+                Log.e(TAG, "Failed to establish/maintain ADB connection");
+                return permissions;
+            }
+            
+            synchronized(adbLock) {
+                try {
+                    // Open shell stream
+                    stream = adbConnection.open("shell:");
+                    Log.d(TAG, "ADB shell stream opened for permissions");
+                    
+                    // Get permissions using dumpsys
+                    String output = executeAdbCommand(stream, "dumpsys package " + packageName);
+                    Log.d(TAG, "Raw permission output: " + output);
+                    
+                    // Parse the output for permissions
+                    String[] lines = output.split("\n");
+                    boolean inPermissionsSection = false;
+                    Set<String> processedPermissions = new HashSet<>();
+                    
+                    for (String line : lines) {
+                        line = line.trim();
+                        
+                        // Look for the permissions sections
+                        if (line.contains("granted=true")) {
+                            inPermissionsSection = true;
+                            
+                            // Extract permission name
+                            String permission = null;
+                            if (line.contains("android.permission.")) {
+                                permission = line.substring(line.indexOf("android.permission."));
+                            } else if (line.contains("com.google.android.permission.")) {
+                                permission = line.substring(line.indexOf("com.google.android.permission."));
+                            }
+                            
+                            if (permission != null) {
+                                permission = permission.split("[:=]")[0].trim();
+                                
+                                // Only process each permission once
+                                if (!processedPermissions.contains(permission)) {
+                                    processedPermissions.add(permission);
+                                    
+                                    // Map to our permission types
+                                    String permType = null;
+                                    if (permission.contains("LOCATION")) {
+                                        permType = "location";
+                                    } else if (permission.contains("CAMERA")) {
+                                        permType = "camera";
+                                    } else if (permission.contains("RECORD_AUDIO") || permission.contains("MICROPHONE")) {
+                                        permType = "microphone";
+                                    } else if (permission.contains("STORAGE") || permission.contains("MEDIA")) {
+                                        permType = "storage";
+                                    }
+                                    
+                                    if (permType != null) {
+                                        Map<String, String> permissionData = new HashMap<>();
+                                        permissionData.put("permission", permission);
+                                        permissionData.put("icon", permType);
+                                        permissions.add(permissionData);
+                                        Log.d(TAG, "Added permission: " + permission + " with type: " + permType);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Exit permissions section when we hit a new major section
+                        if (inPermissionsSection && (line.startsWith("User ") || line.startsWith("Package ["))) {
+                            inPermissionsSection = false;
+                        }
+                    }
+                    
+                    Log.d(TAG, "Found " + permissions.size() + " permissions for " + packageName);
+                    
+                } finally {
+                    if (stream != null) {
+                        try {
+                            stream.close();
+                            Log.d(TAG, "ADB shell stream closed for permissions");
+                        } catch (IOException e) {
+                            Log.e(TAG, "Error closing permissions stream", e);
+                        }
+                    }
+                }
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting permissions for " + packageName, e);
+        }
+        
+        return permissions;
     }
 }
 

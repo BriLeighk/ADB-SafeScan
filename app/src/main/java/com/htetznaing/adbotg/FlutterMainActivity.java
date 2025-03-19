@@ -15,6 +15,7 @@ import java.util.Map;
 import android.util.Log;
 import android.os.Bundle;
 import androidx.annotation.NonNull;
+import android.net.Uri;
 
 // Import MainActivity
 import com.htetznaing.adbotg.MainActivity;
@@ -34,6 +35,10 @@ public class FlutterMainActivity extends FlutterActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        
+        // Initialize AppContextHolder with application context
+        AppContextHolder.setContext(getApplicationContext());
+        
         appController = ApplicationController.getInstance();
 
         // Initialize method channels first
@@ -123,6 +128,48 @@ public class FlutterMainActivity extends FlutterActivity {
         // Add the privacy settings handler
         PrivacySettingsHandler.setup(getFlutterEngine().getDartExecutor().getBinaryMessenger());
         Log.d("FlutterMainActivity", "PrivacySettingsHandler setup complete");
+
+        new MethodChannel(getFlutterEngine().getDartExecutor().getBinaryMessenger(), "com.htetznaing.adbotg/privacy_settings")
+            .setMethodCallHandler(
+                (call, result) -> {
+                    switch (call.method) {
+                        case "openAppSettings":
+                            String packageName = call.argument("package");
+                            if (packageName != null) {
+                                try {
+                                    Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                                    intent.setData(Uri.parse("package:" + packageName));
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                    startActivity(intent);
+                                    result.success(true);
+                                } catch (Exception e) {
+                                    result.error("SETTINGS_ERROR", "Could not open app settings", e.getMessage());
+                                }
+                            } else {
+                                result.error("INVALID_PACKAGE", "Package name is null", null);
+                            }
+                            break;
+
+                        case "getSocialMediaApps":
+                            try {
+                                Boolean fromTarget = call.argument("fromTarget");
+                                if (fromTarget == null) fromTarget = false;
+                                
+                                List<Map<String, Object>> socialMediaApps = PrivacySettingsHandler.getInstance(this, SpywareDetector.getInstance())
+                                    .getSocialMediaApps(fromTarget);
+                                result.success(socialMediaApps);
+                            } catch (Exception e) {
+                                Log.e("FlutterMainActivity", "Error getting social media apps", e);
+                                result.error("GET_APPS_ERROR", "Could not get social media apps", e.getMessage());
+                            }
+                            break;
+
+                        default:
+                            result.notImplemented();
+                            break;
+                    }
+                }
+            );
     }
 
     /**

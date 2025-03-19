@@ -163,10 +163,89 @@ class _PrivacyScanPageState extends State<PrivacyScanPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ...app.recommendations.map((rec) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4.0),
-                    child: Text('• $rec'),
-                  )),
+              if (isSourceDevice) ...[
+                const Text(
+                  'Active Permissions:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: _buildUniquePermissionIcons(app.permissions),
+                ),
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 16),
+              ],
+              const Text(
+                'Recommendations:',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ...app.getAllRecommendations().map((rec) {
+                // Section headers (emoji headers)
+                if (rec.startsWith('⚠️') ||
+                    rec.startsWith('📱') ||
+                    rec.startsWith('🔒')) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
+                    child: Text(
+                      rec,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  );
+                }
+                // Permission type headers (with emojis 📍, 📸, 🎤, 📁)
+                else if (rec.startsWith('📍') ||
+                    rec.startsWith('📸') ||
+                    rec.startsWith('🎤') ||
+                    rec.startsWith('📁')) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
+                    child: Text(
+                      rec,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  );
+                }
+                // Empty spacing lines
+                else if (rec.isEmpty) {
+                  return const SizedBox(height: 8.0);
+                }
+                // Regular recommendation items
+                else {
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      left: rec.startsWith('  •') ? 32.0 : 16.0,
+                      top: 2.0,
+                      bottom: 2.0,
+                    ),
+                    child: Text(
+                      rec,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: rec.startsWith('  •')
+                            ? Colors.black54
+                            : Colors.black87,
+                        height: 1.4,
+                      ),
+                    ),
+                  );
+                }
+              }).toList(),
             ],
           ),
         ),
@@ -175,7 +254,7 @@ class _PrivacyScanPageState extends State<PrivacyScanPage> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
           ),
-          if (isSourceDevice) // Only show Settings button for source device
+          if (isSourceDevice)
             TextButton(
               onPressed: () => _openAppSettings(app.packageName),
               child: const Text('Open Settings'),
@@ -183,6 +262,72 @@ class _PrivacyScanPageState extends State<PrivacyScanPage> {
         ],
       ),
     );
+  }
+
+  List<Widget> _buildUniquePermissionIcons(List<dynamic> permissions) {
+    Set<String> uniquePermissions = Set<String>();
+    List<Widget> uniqueIcons = [];
+
+    for (var perm in permissions) {
+      String permType = '';
+      if (perm is String) {
+        permType = perm;
+      } else if (perm is Map) {
+        permType =
+            perm['permission']?.toString().split('.').last.toLowerCase() ?? '';
+        if (permType.contains('location'))
+          permType = 'location';
+        else if (permType.contains('camera'))
+          permType = 'camera';
+        else if (permType.contains('audio') || permType.contains('microphone'))
+          permType = 'microphone';
+        else if (permType.contains('storage') || permType.contains('media'))
+          permType = 'storage';
+      }
+
+      if (permType.isNotEmpty && !uniquePermissions.contains(permType)) {
+        uniquePermissions.add(permType);
+        IconData iconData;
+        String tooltip;
+        switch (permType) {
+          case 'location':
+            iconData = Icons.location_on;
+            tooltip = 'Location Access';
+            break;
+          case 'camera':
+            iconData = Icons.camera_alt;
+            tooltip = 'Camera Access';
+            break;
+          case 'microphone':
+            iconData = Icons.mic;
+            tooltip = 'Microphone Access';
+            break;
+          case 'storage':
+            iconData = Icons.folder;
+            tooltip = 'Storage Access';
+            break;
+          default:
+            iconData = Icons.security;
+            tooltip = 'Other Permission';
+            break;
+        }
+        uniqueIcons.add(
+          Tooltip(
+            message: tooltip,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: Icon(
+                iconData,
+                size: 24.0,
+                color: Colors.grey[700],
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    return uniqueIcons;
   }
 
   Future<void> _launchGooglePrivacyCheckup() async {
