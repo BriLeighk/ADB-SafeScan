@@ -2,7 +2,6 @@
 
 ## Overview
 SafeScan is a comprehensive spyware detection tool designed to assist victims of Intimate Partner Violence (IPV) by providing a secure way to detect and manage potential spyware and privacy risks on Android devices. The app uses ADB (Android Debug Bridge) over USB-OTG to scan target devices without requiring root access.
-SafeScan is a comprehensive spyware detection tool designed to assist victims of Intimate Partner Violence (IPV) by providing a secure way to detect and manage potential spyware and privacy risks on Android devices. The app uses ADB (Android Debug Bridge) over USB-OTG to scan target devices without requiring root access.
 
 ## Key Features
 
